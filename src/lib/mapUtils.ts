@@ -1,4 +1,3 @@
-
 import { search as nominatimSearch } from "nominatim-client";
 import * as turf from '@turf/turf';
 
