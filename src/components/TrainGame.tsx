@@ -1,8 +1,6 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
-import MapContainer from './MapContainer';
-import GameHeader from './GameHeader';
-import SearchBar from './SearchBar';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import PassengerNotification from './PassengerNotification';
 import { 
   DEFAULT_COORDINATES, 
   DEFAULT_ZOOM,
@@ -10,25 +8,36 @@ import {
   generateStations, 
   Coordinates,
   TrackSegment,
+  Station,
   findClosestTrack,
   findConnectingTrack,
-  ConnectingTrackInfo
+  ConnectingTrackInfo,
+  geocodeAddress
 } from '@/lib/mapUtils';
 import { toast } from 'sonner';
+import { GameProvider, Passenger, Desire, GameEvent, GameMessage, useGame } from '@/contexts/GameContext';
+import GameContent from './GameContent';
+import { getCurrentUser } from '@/lib/authUtils';
+import { saveRouteToHistory } from '@/lib/routeUtils';
 import { Button } from './ui/button';
-import { Train, Menu, MapPin, Locate, Users, History, LogIn, User, Globe } from 'lucide-react';
+import { Input } from './ui/input';
 import { Sheet, SheetContent, SheetTrigger } from './ui/sheet';
-import UserProfile from './UserProfile';
-import TrackLegend from './TrackLegend';
-import PassengerInfo from './PassengerInfo';
-import ConsoleBanner from './ConsoleBanner';
+import { Train, Menu, MapPin, Locate, Users, User, Globe, LogIn, History, Search, Star, HelpCircle } from 'lucide-react';
+import MapContainer from './MapContainer';
 import StyledLoadingScreen from './StyledLoadingScreen';
-import PassengerList from './PassengerList';
-import { Passenger } from './PassengerSystem';
 import CityExplorer from './CityExplorer';
 import MyRoutes from './MyRoutes';
 import AuthDialog from './AuthDialog';
-import { getCurrentUser, saveRouteForCurrentUser, saveToRouteHistory } from '@/lib/authUtils';
+import TrackLegend from './TrackLegend';
+import PassengerList from './PassengerList';
+import PassengerInfo from './PassengerInfo';
+import GameHeader from './GameHeader';
+import UserProfile from './UserProfile';
+import GameTutorial from './GameTutorial';
+import LevelSelector from './LevelSelector';
+import LevelProgress from './LevelProgress';
+import TrainSeatsModal from './TrainSeatsModal';
+import { gameLevels, loadLevelProgress, saveLevelProgress, updateLevelObjectives, getCurrentLevel } from '@/lib/levelSystem';
 
 interface TrainGameProps {
   initialCoordinates?: Coordinates;
@@ -38,7 +47,7 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
   const [mapCenter, setMapCenter] = useState<Coordinates>(initialCoordinates);
   const [mapZoom, setMapZoom] = useState(DEFAULT_ZOOM);
   const [tracks, setTracks] = useState<TrackSegment[]>([]);
-  const [stations, setStations] = useState<any[]>([]);
+  const [stations, setStations] = useState<Station[]>([]);
   const [trainPosition, setTrainPosition] = useState<Coordinates>(DEFAULT_COORDINATES);
   const [currentTrackId, setCurrentTrackId] = useState<string>("");
   const [trainSpeed, setTrainSpeed] = useState<number>(50);
@@ -48,25 +57,76 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
   const [selectedTrack, setSelectedTrack] = useState<TrackSegment | null>(null);
   const [mapStyle, setMapStyle] = useState<'street' | 'satellite'>('satellite');
   
-  // Sistema de dificultad y pasajeros
-  const [difficulty, setDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
-  const [money, setMoney] = useState<number>(1000);
-  const [points, setPoints] = useState<number>(0);
-  const [activePassengers, setActivePassengers] = useState<Passenger[]>([]);
-  const [pickedUpPassengers, setPickedUpPassengers] = useState<Passenger[]>([]);
-  const [showPassengersList, setShowPassengersList] = useState<boolean>(false);
-  const [autoMode, setAutoMode] = useState<boolean>(false);
   // Estado para controlar la dirección del tren en la vía actual
   const [isReversed, setIsReversed] = useState<boolean>(false);
   
-  // Estados para los nuevos diálogos
+  // Estados para los diálogos
   const [showCityExplorer, setShowCityExplorer] = useState<boolean>(false);
   const [showMyRoutes, setShowMyRoutes] = useState<boolean>(false);
   const [showAuthDialog, setShowAuthDialog] = useState<boolean>(false);
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
+  
+  // Estados para el modo automático
+  const [autoMode, setAutoMode] = useState<boolean>(false);
+  
+  // Estados para dificultad
+  const [difficulty, setDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
+  
+  // Estado para mostrar lista de pasajeros
+  const [showPassengersList, setShowPassengersList] = useState<boolean>(false);
+  
+  // Estado para la búsqueda
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  
+  // Estados para el sistema de niveles y tutorial
+  const [levels, setLevels] = useState(loadLevelProgress());
+  const [currentLevel, setCurrentLevel] = useState(getCurrentLevel(loadLevelProgress()) || levels[0]);
+  const [showTutorial, setShowTutorial] = useState(false);
+  const [isFirstTimeUser, setIsFirstTimeUser] = useState(false); // Estado para detectar si es la primera vez
+  const [showLevelSelector, setShowLevelSelector] = useState(false);
+  const [gameTime, setGameTime] = useState(0); // Tiempo de juego en segundos
+  const [seatsModalVisible, setSeatsModalVisible] = useState(false); // Estado para el modal de asientos
+  
+  // Estados para pasajeros
+  const [activePassengers, setActivePassengers] = useState<Passenger[]>([]);
+  const [pickedUpPassengers, setPickedUpPassengers] = useState<Passenger[]>([]);
+  const [trainCapacity, setTrainCapacity] = useState<number>(8); // Capacidad inicial del tren (ajustable dinámicamente)
+  
+  // Estados para el juego - valores iniciales basados en el nivel actual
+  const [money, setMoney] = useState<number>(currentLevel?.initialMoney || 1000);
+  const [points, setPoints] = useState<number>(0);
+  const [happiness, setHappiness] = useState<number>(currentLevel?.initialHappiness || 50);
 
+  // Variable para controlar si es la primera carga del juego
+  const isFirstLoad = useRef(true);
+  // Variable para controlar si el tutorial ya se ha mostrado en esta sesión
+  const tutorialShown = useRef(false);
+  // Variable para controlar si estamos en modo búsqueda (para evitar mostrar el tutorial)
+  const isSearchMode = useRef(false);
+  
+  // Estados para las notificaciones de pasajeros
+  const [pickupNotification, setPickupNotification] = useState({ visible: false, count: 0 });
+  const [dropoffNotification, setDropoffNotification] = useState({ visible: false, count: 0 });
+  
   const initializeGame = useCallback(async (center: Coordinates) => {
     setIsLoading(true);
+    
+    // Verificar si es un usuario nuevo o si no hay progreso guardado
+    // pero solo en la primera carga, no durante búsquedas
+    if (isFirstLoad.current) {
+      const savedProgress = loadLevelProgress();
+      if (!savedProgress || savedProgress.length === 0) {
+        setIsFirstTimeUser(true);
+        // No mostrar el tutorial aquí, lo mostraremos después de cargar el mapa
+      }
+      isFirstLoad.current = false; // Marcar que ya no es la primera carga
+    }
+    
+    // Siempre desactivar el tutorial durante las búsquedas o recargas
+    if (!isFirstLoad.current) {
+      setShowTutorial(false);
+    }
+    
     try {
       // Generar la red de vías basada en calles reales
       const trackNetwork = await generateTrackNetwork(center);
@@ -86,14 +146,177 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
       }
       
       toast.success("¡Mapa cargado con calles reales!");
+      
+      // Reiniciar valores del juego según el nivel actual
+      if (currentLevel) {
+        setMoney(currentLevel.initialMoney);
+        setHappiness(currentLevel.initialHappiness || 50);
+        setPoints(0);
+        
+        // Reiniciar objetivos del nivel
+        const updatedLevels = [...levels];
+        const levelIndex = updatedLevels.findIndex(l => l.id === currentLevel.id);
+        if (levelIndex !== -1) {
+          updatedLevels[levelIndex].objectives.forEach(obj => obj.current = 0);
+          setLevels(updatedLevels);
+          saveLevelProgress(updatedLevels);
+        }
+        
+        toast.info(`Nivel ${currentLevel.id}: ${currentLevel.name} - €${currentLevel.initialMoney} iniciales`);
+      }
+      
+      // El tutorial se mostrará después de que el mapa esté completamente cargado
+      // Lo controlamos con un evento de carga completa en lugar de un temporizador
+      // Esto se maneja en el useEffect que observa isLoading
     } catch (error) {
       console.error("Error initializing game:", error);
       toast.error("Error al cargar el mapa");
     } finally {
       setIsLoading(false);
+      
+      // Mostrar el tutorial solo después de la carga inicial del mapa,
+      // y solo si no se ha mostrado antes en esta sesión
+      if (isFirstTimeUser && !tutorialShown.current && !isFirstLoad.current) {
+        // Marcar que el tutorial ya se ha mostrado para evitar que aparezca de nuevo
+        tutorialShown.current = true;
+        
+        // Mostrar el tutorial con un retraso para asegurar que el mapa esté completamente cargado
+        setTimeout(() => {
+          setShowTutorial(true);
+        }, 2000); // 2 segundos de retraso
+      }
     }
   }, []);
 
+  // Función para manejar la búsqueda de ubicaciones
+  const handleSearchSubmit = async (e: React.KeyboardEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    
+    // Marcar que estamos en modo búsqueda para evitar que aparezca el tutorial
+    isSearchMode.current = true;
+    // Asegurarse de que el tutorial esté cerrado durante las búsquedas
+    setShowTutorial(false);
+    
+    if (!searchQuery.trim()) {
+      toast.error('Por favor, introduce una ubicación');
+      return;
+    }
+    
+    setIsLoading(true);
+    toast.info('Buscando ubicación...');
+    
+    try {
+      // Buscar la dirección y obtener coordenadas usando la función geocodeAddress
+      const coordinates = await geocodeAddress(searchQuery);
+      
+      // Verificar si son las coordenadas por defecto
+      const isDefault = (
+        Math.abs(coordinates.lat - DEFAULT_COORDINATES.lat) < 0.001 && 
+        Math.abs(coordinates.lng - DEFAULT_COORDINATES.lng) < 0.001
+      );
+      
+      if (isDefault) {
+        toast.info(`No se encontró "${searchQuery}". Usando ubicación predeterminada.`);
+      } else {
+        toast.success(`Ubicación encontrada: ${searchQuery}`);
+      }
+      
+      // Inicializar el juego con las coordenadas
+      initializeGame(coordinates);
+    } catch (error) {
+      console.error('Error en la búsqueda:', error);
+      toast.error('Error al buscar la ubicación');
+      initializeGame(DEFAULT_COORDINATES);
+    } finally {
+      setIsLoading(false);
+      setSearchQuery(''); // Limpiar el campo de búsqueda
+    }
+  };
+  
+  // Mostrar tutorial al iniciar si es el primer nivel
+  useEffect(() => {
+    if (currentLevel.id === 0 && !currentLevel.completed) {
+      setShowTutorial(true);
+    }
+  }, [currentLevel]);
+  
+  // Temporizador para el tiempo de juego
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (isLoading) return;
+      setGameTime(prev => prev + 1);
+    }, 1000);
+    
+    return () => clearInterval(timer);
+  }, [isLoading]);
+  
+  // Actualizar objetivos del nivel actual
+  const updateCurrentLevelObjectives = () => {
+    // Usar el hook useGame para acceder al contexto del juego
+    const gameContext = useGame();
+    if (!gameContext) return;
+    
+    const { money, happiness, deliveredPassengers } = gameContext;
+    
+    const updatedLevels = updateLevelObjectives(
+      levels,
+      currentLevel.id,
+      [
+        { type: 'money', value: money },
+        { type: 'happiness', value: happiness },
+        { type: 'passengers', value: deliveredPassengers.length },
+        { type: 'time', value: gameTime }
+      ]
+    );
+    
+    setLevels(updatedLevels);
+    
+    // Actualizar nivel actual si ha cambiado
+    const newCurrentLevel = getCurrentLevel(updatedLevels);
+    if (newCurrentLevel && newCurrentLevel.id !== currentLevel.id) {
+      setCurrentLevel(newCurrentLevel);
+      // Solo mostrar tutorial si no estamos en modo búsqueda
+      if (!isSearchMode.current) {
+        setShowTutorial(true); // Mostrar tutorial del nuevo nivel
+      }
+    }
+  };
+  
+  // Actualizar objetivos cada 5 segundos
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (isLoading) return;
+      updateCurrentLevelObjectives();
+    }, 5000);
+    
+    return () => clearInterval(interval);
+  }, [isLoading, currentLevel, levels]);
+  
+  // Seleccionar un nivel
+  const handleSelectLevel = (level: typeof levels[0]) => {
+    if (!level.unlocked) return;
+    
+    setCurrentLevel(level);
+    setShowLevelSelector(false);
+    initializeGame(initialCoordinates); // Reiniciar el juego con el nuevo nivel
+    // Solo mostrar tutorial si no estamos en modo búsqueda
+    if (!isSearchMode.current) {
+      setShowTutorial(true); // Mostrar tutorial del nivel seleccionado
+    }
+  };
+  
+  // Completar tutorial
+  const handleCompleteTutorial = () => {
+    toast.success(`¡Tutorial completado! Comienza a jugar el nivel ${currentLevel.name}`)
+  };
+  
+  // Tiempo agotado
+  const handleTimeUp = () => {
+    toast.error('¡Se ha agotado el tiempo! Inténtalo de nuevo.');
+    // Reiniciar nivel
+    initializeGame(initialCoordinates);
+  };
+  
   // Inicializar el juego al cargar
   useEffect(() => {
     initializeGame(initialCoordinates);
@@ -105,14 +328,11 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
     // Guardar esta ubicación en el historial
     const locationName = `Ubicación ${new Date().toLocaleDateString('es-ES')}`;
     if (user) {
-      saveRouteForCurrentUser(locationName, initialCoordinates);
+      // Función para guardar ruta para el usuario actual (implementar en routeUtils)
+      saveRouteToHistory(locationName, initialCoordinates, user.id);
     } else {
-      saveToRouteHistory({
-        id: Date.now().toString(),
-        name: locationName,
-        coordinates: initialCoordinates,
-        timestamp: Date.now()
-      });
+      // Función para guardar en el historial general (implementar en routeUtils)
+      saveRouteToHistory(locationName, initialCoordinates);
     }
   }, [initializeGame, initialCoordinates]);
   
@@ -218,12 +438,41 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
 
   // Manejo de pasajeros
   const handlePassengerPickup = useCallback((passenger: Passenger) => {
+    // Actualizar pasajeros activos (eliminar el recogido)
     setActivePassengers(prev => prev.filter(p => p.id !== passenger.id));
-    setPickedUpPassengers(prev => [...prev, passenger]);
+    
+    // Actualizar pasajeros recogidos y ajustar capacidad del tren si es necesario
+    setPickedUpPassengers(prev => {
+      const newPickedUp = [...prev, passenger];
+      
+      // Si el número de pasajeros supera la capacidad actual, aumentarla
+      if (newPickedUp.length >= trainCapacity) {
+        setTrainCapacity(Math.max(8, Math.ceil(newPickedUp.length * 1.5))); // Aumentar capacidad con margen
+      }
+      
+      // Acumular pasajeros para notificaciones agrupadas
+      // Si ya hay una notificación visible, aumentar el contador
+      if (pickupNotification.visible) {
+        setPickupNotification(prev => ({ visible: true, count: prev.count + 1 }));
+      } else {
+        // Si no hay notificación visible, mostrar una nueva
+        setPickupNotification({ visible: true, count: 1 });
+        
+        // Programar para ocultar la notificación después de 3 segundos
+        setTimeout(() => {
+          setPickupNotification({ visible: false, count: 0 });
+        }, 3000);
+      }
+      
+      return newPickedUp;
+    });
+    
+    // Mostrar notificación toast
     toast.success(`Pasajero recogido en ${passenger.origin.name}`);
-  }, []);
+  }, [trainCapacity]);
   
   const handlePassengerDelivery = useCallback((passenger: Passenger) => {
+    // Eliminar pasajero de los recogidos
     setPickedUpPassengers(prev => prev.filter(p => p.id !== passenger.id));
     
     // Calcular recompensa
@@ -245,7 +494,22 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
     setMoney(prev => prev + baseReward);
     setPoints(prev => prev + basePoints + bonusPoints);
     
+    // Mostrar notificación toast
     toast.success(`Pasajero entregado en ${passenger.destination.name}. +$${baseReward}, +${basePoints + bonusPoints} puntos${bonusText}`);
+    
+    // Acumular pasajeros para notificaciones agrupadas
+    // Si ya hay una notificación visible, aumentar el contador
+    if (dropoffNotification.visible) {
+      setDropoffNotification(prev => ({ visible: true, count: prev.count + 1 }));
+    } else {
+      // Si no hay notificación visible, mostrar una nueva
+      setDropoffNotification({ visible: true, count: 1 });
+      
+      // Programar para ocultar la notificación después de 3 segundos
+      setTimeout(() => {
+        setDropoffNotification({ visible: false, count: 0 });
+      }, 3000);
+    }
     
     // Verificar si se ha alcanzado algún hito
     if (points + basePoints + bonusPoints >= 1000 || money + baseReward >= 5000) {
@@ -483,6 +747,20 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
                   <Button 
                     className="w-full justify-start" 
                     variant="ghost"
+                    onClick={() => {
+                      // Solo mostrar tutorial si no estamos en modo búsqueda
+                      if (!isSearchMode.current) {
+                        setShowTutorial(true);
+                      }
+                    }}
+                  >
+                    <HelpCircle className="mr-2 h-4 w-4" />
+                    Ver tutorial
+                  </Button>
+                  
+                  <Button 
+                    className="w-full justify-start" 
+                    variant="ghost"
                     onClick={() => setShowAuthDialog(true)}
                   >
                     {isLoggedIn ? (
@@ -514,10 +792,29 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
       <div className="absolute top-4 right-4 z-50 max-w-xs">
         <div className="bg-background/80 backdrop-blur-sm p-2 rounded-lg shadow-lg border border-primary/20">
           <div className="flex flex-col gap-2">
-            {/* Fila superior: Búsqueda y ubicación */}
+            {/* Barra de búsqueda integrada */}
             <div className="flex gap-1 items-center">
-              <div className="flex-grow">
-                <SearchBar onSearch={handleSearch} isLoading={isLoading} />
+              <div className="relative flex-grow">
+                <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                <Input
+                  type="text"
+                  placeholder="Buscar ubicación..."
+                  className="pl-8 pr-10 h-8 text-sm"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSearchSubmit(e)}
+                  disabled={isLoading}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-1 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0"
+                  onClick={() => searchQuery.trim() && handleSearchSubmit({ preventDefault: () => {} } as any)}
+                  disabled={isLoading || !searchQuery.trim()}
+                >
+                  <MapPin className="h-3 w-3 text-primary" />
+                </Button>
               </div>
               <Button 
                 variant="default" 
@@ -567,6 +864,8 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
                 onPassengerExpired={handlePassengerExpired}
                 setActivePassengers={setActivePassengers}
                 difficulty={difficulty}
+                currentLevel={currentLevel} // Pasar el nivel actual
+                trainCapacity={trainCapacity} // Usar la capacidad dinámica del tren
               />
             </div>
             
@@ -579,14 +878,26 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
             <div className="absolute bottom-8 left-0 right-0 flex justify-center items-center z-50 pointer-events-none">
               <div className="bg-background/80 backdrop-blur-sm p-2 rounded-lg shadow-lg border border-primary/20 w-full max-w-[840px] mx-4 pointer-events-auto">
                 <div className="flex flex-row items-center gap-3 justify-between h-[70px]">
-                  {/* Sección 1: Información de pasajeros */}
-                  <div className="flex-shrink-0 w-[180px]">
-                    <PassengerInfo 
-                      money={money}
-                      points={points}
-                      activePassengers={activePassengers}
-                      pickedUpPassengers={pickedUpPassengers}
-                    />
+                  {/* Sección 1: Información de pasajeros integrada con botón de asientos */}
+                  <div className="flex items-center gap-2">
+                    <div className="flex-shrink-0">
+                      <PassengerInfo 
+                        money={money}
+                        points={points}
+                        activePassengers={activePassengers}
+                        pickedUpPassengers={pickedUpPassengers}
+                      />
+                    </div>
+                    
+                    {/* Botón compacto para mostrar modal de asientos */}
+                    <button 
+                      onClick={() => setSeatsModalVisible(true)}
+                      className="flex items-center gap-1 px-2 py-1 bg-blue-500 text-white text-sm rounded-md hover:bg-blue-600 transition-colors"
+                      title="Ver asientos del tren"
+                    >
+                      <Train size={16} />
+                      <span>{pickedUpPassengers.length}/{trainCapacity}</span>
+                    </button>
                   </div>
                   
                   {/* Separador vertical */}
@@ -710,15 +1021,11 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
           
           // Guardar en historial
           const locationName = `Ciudad ${new Date().toLocaleDateString('es-ES')}`;
-          if (getCurrentUser()) {
-            saveRouteForCurrentUser(locationName, coordinates);
+          const user = getCurrentUser();
+          if (user) {
+            saveRouteToHistory(locationName, coordinates, user.id);
           } else {
-            saveToRouteHistory({
-              id: Date.now().toString(),
-              name: locationName,
-              coordinates,
-              timestamp: Date.now()
-            });
+            saveRouteToHistory(locationName, coordinates);
           }
         }}
       />
@@ -741,6 +1048,90 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
             setIsLoggedIn(!!getCurrentUser());
           }
         }}
+      />
+      
+      {/* Tutorial del juego */}
+      <GameTutorial
+        isOpen={showTutorial}
+        onClose={() => setShowTutorial(false)}
+        onComplete={() => {
+          setShowTutorial(false);
+          // Si es el nivel tutorial, marcarlo como completado
+          if (currentLevel && currentLevel.id === 0) {
+            const updatedLevels = [...levels];
+            const tutorialLevel = updatedLevels.find(l => l.id === 0);
+            if (tutorialLevel) {
+              tutorialLevel.completed = true;
+              // Desbloquear el siguiente nivel
+              const nextLevel = updatedLevels.find(l => l.id === 1);
+              if (nextLevel) nextLevel.unlocked = true;
+              
+              setLevels(updatedLevels);
+              saveLevelProgress(updatedLevels);
+              toast.success('¡Tutorial completado! Has desbloqueado el nivel 1.');
+            }
+          }
+          // Ya no es primera vez
+          setIsFirstTimeUser(false);
+        }}
+        currentLevel={currentLevel?.id || 0}
+        isFirstTime={isFirstTimeUser}
+      />
+      
+      {/* Selector de niveles */}
+      {showLevelSelector && (
+        <LevelSelector
+          onClose={() => setShowLevelSelector(false)}
+          levels={levels}
+          onSelectLevel={(level) => {
+            setCurrentLevel(level);
+            
+            // Inicializar valores del juego según el nivel seleccionado
+            setMoney(level.initialMoney);
+            setHappiness(level.initialHappiness || 50);
+            setPoints(0);
+            
+            // Reiniciar objetivos del nivel
+            const updatedLevels = [...levels];
+            const levelIndex = updatedLevels.findIndex(l => l.id === level.id);
+            if (levelIndex !== -1) {
+              updatedLevels[levelIndex].objectives.forEach(obj => obj.current = 0);
+              setLevels(updatedLevels);
+              saveLevelProgress(updatedLevels);
+            }
+            
+            // Reiniciar el mapa si es necesario
+            if (mapCenter) {
+              initializeGame(mapCenter);
+            }
+            
+            setShowLevelSelector(false);
+            toast.success(`Nivel ${level.id}: ${level.name} seleccionado - €${level.initialMoney} iniciales`);
+          }}
+        />
+      )}
+      
+      {/* Modal de asientos del tren */}
+      <TrainSeatsModal
+        isOpen={seatsModalVisible}
+        onClose={() => setSeatsModalVisible(false)}
+        pickedUpPassengers={pickedUpPassengers}
+        trainCapacity={trainCapacity}
+      />
+      
+      {/* Notificaciones de pasajeros */}
+      <PassengerNotification
+        type="pickup"
+        count={pickupNotification.count}
+        isVisible={pickupNotification.visible}
+        onAnimationComplete={() => setPickupNotification({ visible: false, count: 0 })}
+      />
+      
+      <PassengerNotification
+        type="dropoff"
+        count={dropoffNotification.count}
+        isVisible={dropoffNotification.visible}
+        onAnimationComplete={() => setDropoffNotification({ visible: false, count: 0 })}
       />
     </div>
   );
