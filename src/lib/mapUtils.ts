@@ -1,5 +1,5 @@
 
-import { search } from "nominatim-client";
+import { search as nominatimSearch } from "nominatim-client";
 import * as turf from '@turf/turf';
 
 export interface Coordinates {
@@ -27,7 +27,7 @@ export const DEFAULT_ZOOM = 16;
 // Convert address to coordinates using Nominatim
 export const geocodeAddress = async (address: string): Promise<Coordinates> => {
   try {
-    const results = await search({ q: address, limit: 1 });
+    const results = await nominatimSearch({ q: address, limit: 1 });
     
     if (results && results.length > 0) {
       const location = results[0];
