@@ -33,6 +33,7 @@ interface PassengerSystemProps {
   onPassengerDelivery: (passenger: Passenger) => void;
   onPassengerExpired: (passenger: Passenger) => void;
   pickedUpPassengers: Passenger[];
+  difficulty: 'easy' | 'medium' | 'hard';
 }
 
 const PassengerSystem: React.FC<PassengerSystemProps> = ({
@@ -42,7 +43,8 @@ const PassengerSystem: React.FC<PassengerSystemProps> = ({
   onPassengerPickup,
   onPassengerDelivery,
   onPassengerExpired,
-  pickedUpPassengers
+  pickedUpPassengers,
+  difficulty
 }) => {
   const [passengers, setPassengers] = useState<Passenger[]>([]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -58,29 +60,75 @@ const PassengerSystem: React.FC<PassengerSystemProps> = ({
     });
   }, [stations]);
 
-  // Generate passengers every 30 seconds
+  // Configuración basada en la dificultad
+  const difficultySettings = {
+    easy: {
+      maxPassengersPerStation: 2,
+      generationInterval: 45000, // 45 segundos
+      expirationTime: 120000,    // 2 minutos
+      stationProbability: 0.3,   // 30% de estaciones generan pasajeros
+      pickupRadius: 15           // Radio de recogida más grande
+    },
+    medium: {
+      maxPassengersPerStation: 4,
+      generationInterval: 30000, // 30 segundos
+      expirationTime: 90000,     // 1.5 minutos
+      stationProbability: 0.5,   // 50% de estaciones generan pasajeros
+      pickupRadius: 10           // Radio de recogida estándar
+    },
+    hard: {
+      maxPassengersPerStation: 6,
+      generationInterval: 20000, // 20 segundos
+      expirationTime: 60000,     // 1 minuto
+      stationProbability: 0.7,   // 70% de estaciones generan pasajeros
+      pickupRadius: 8            // Radio de recogida más pequeño
+    }
+  };
+  
+  // Obtener configuración actual según dificultad
+  const currentSettings = difficultySettings[difficulty];
+  
+  // Generate passengers based on difficulty
   useEffect(() => {
+    // Reinicializar las estaciones que pueden generar pasajeros según dificultad
+    stations.forEach(station => {
+      station.canGenerate = Math.random() < currentSettings.stationProbability;
+    });
+    
     const generatePassengers = () => {
+      // Si hay demasiados pasajeros activos, no generar más
+      // Limitamos a máximo 18 pasajeros en total, distribuidos según dificultad
+      const maxTotalPassengers = {
+        easy: 6,
+        medium: 12,
+        hard: 18
+      }[difficulty];
+      
+      if (passengers.length >= maxTotalPassengers) {
+        console.log(`Límite de pasajeros alcanzado (${passengers.length}/${maxTotalPassengers}). No se generarán más hasta que se recojan algunos.`);
+        return;
+      }
+      
       const newPassengers: Passenger[] = [];
       
       stations.forEach(station => {
         if (station.canGenerate) {
-          // Generate between 1 and 6 passengers per station
-          const passengerCount = Math.floor(Math.random() * 6) + 1;
+          // Generar pasajeros según dificultad
+          const passengerCount = Math.floor(Math.random() * currentSettings.maxPassengersPerStation) + 1;
           
           for (let i = 0; i < passengerCount; i++) {
-            // Find a random destination station different from origin
+            // Encontrar una estación de destino diferente al origen
             const availableDestinations = stations.filter(s => s.id !== station.id);
             if (availableDestinations.length === 0) continue;
             
             const destination = availableDestinations[Math.floor(Math.random() * availableDestinations.length)];
             
-            // Create random offset within 5px radius
+            // Crear offset aleatorio dentro de un radio de 5px
             const offsetX = (Math.random() * 10 - 5);
             const offsetY = (Math.random() * 10 - 5);
-            const animationOffset = Math.random() * Math.PI * 2; // Random starting point for animation
+            const animationOffset = Math.random() * Math.PI * 2; // Punto de inicio aleatorio para la animación
             
-            // Create passenger with offset position
+            // Crear pasajero con posición desplazada
             const passenger: Passenger = {
               id: `passenger-${station.id}-${Date.now()}-${i}`,
               origin: station,
@@ -104,11 +152,11 @@ const PassengerSystem: React.FC<PassengerSystemProps> = ({
       setPassengers(prev => [...prev, ...newPassengers]);
     };
     
-    // Generate initial passengers
+    // Generar pasajeros iniciales
     generatePassengers();
     
-    // Set up interval for generating passengers
-    const intervalId = setInterval(generatePassengers, 30000);
+    // Configurar intervalo para generar pasajeros según dificultad
+    const intervalId = setInterval(generatePassengers, currentSettings.generationInterval);
     
     // Actualizar la posición de los pasajeros cada 100ms para animación fluida
     const updateInterval = setInterval(() => {
@@ -134,7 +182,7 @@ const PassengerSystem: React.FC<PassengerSystemProps> = ({
       clearInterval(intervalId);
       clearInterval(updateInterval);
     };
-  }, [stations]);
+  }, [stations, difficulty, currentSettings]);
 
   // Handle passenger pickup, delivery, and expiration
   useEffect(() => {
@@ -154,7 +202,10 @@ const PassengerSystem: React.FC<PassengerSystemProps> = ({
               destinationPos.lng
             );
             
-            if (distance <= 10) {
+            // Radio de entrega es un poco más grande que el de recogida para facilitar la entrega
+            const deliveryRadius = currentSettings.pickupRadius * 1.2;
+            
+            if (distance <= deliveryRadius) {
               // Passenger delivered
               onPassengerDelivery(passenger);
               return false; // Remove from array
@@ -163,8 +214,8 @@ const PassengerSystem: React.FC<PassengerSystemProps> = ({
             return true; // Keep in array
           }
           
-          // Check if passenger has expired (90 seconds)
-          if (currentTime - passenger.createdAt > 90000) {
+          // Check if passenger has expired (tiempo según dificultad)
+          if (currentTime - passenger.createdAt > currentSettings.expirationTime) {
             onPassengerExpired(passenger);
             return false; // Remove from array
           }
@@ -177,7 +228,7 @@ const PassengerSystem: React.FC<PassengerSystemProps> = ({
             passenger.position.lng
           );
           
-          if (distance <= 10) {
+          if (distance <= currentSettings.pickupRadius) {
             onPassengerPickup(passenger);
             passenger.isPickedUp = true;
           }
@@ -200,7 +251,7 @@ const PassengerSystem: React.FC<PassengerSystemProps> = ({
     }
     
     return () => clearInterval(interactionInterval);
-  }, [trainPosition, isTrainMoving, onPassengerPickup, onPassengerDelivery, onPassengerExpired]);
+  }, [trainPosition, isTrainMoving, onPassengerPickup, onPassengerDelivery, onPassengerExpired, difficulty, currentSettings]);
 
   // Render passengers on canvas
   useEffect(() => {
@@ -265,7 +316,7 @@ const PassengerSystem: React.FC<PassengerSystemProps> = ({
   return (
     <canvas 
       ref={canvasRef} 
-      className="absolute top-0 left-0 pointer-events-none z-10"
+      className="absolute top-0 left-0 pointer-events-none z-[1000]"
     />
   );
 };

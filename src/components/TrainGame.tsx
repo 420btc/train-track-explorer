@@ -10,7 +10,9 @@ import {
   generateStations, 
   Coordinates,
   TrackSegment,
-  findClosestTrack
+  findClosestTrack,
+  findConnectingTrack,
+  ConnectingTrackInfo
 } from '@/lib/mapUtils';
 import { toast } from 'sonner';
 import { Button } from './ui/button';
@@ -19,6 +21,7 @@ import { Sheet, SheetContent, SheetTrigger } from './ui/sheet';
 import UserProfile from './UserProfile';
 import TrackLegend from './TrackLegend';
 import PassengerInfo from './PassengerInfo';
+import ConsoleBanner from './ConsoleBanner';
 import PassengerList from './PassengerList';
 import { Passenger } from './PassengerSystem';
 
@@ -34,9 +37,10 @@ const TrainGame: React.FC = () => {
   const [trainMoving, setTrainMoving] = useState<boolean>(false);
   const [currentPathIndex, setCurrentPathIndex] = useState<number>(0);
   const [selectedTrack, setSelectedTrack] = useState<TrackSegment | null>(null);
-  const [mapStyle, setMapStyle] = useState<'street' | 'satellite'>('street');
+  const [mapStyle, setMapStyle] = useState<'street' | 'satellite'>('satellite');
   
-  // Sistema de pasajeros
+  // Sistema de dificultad y pasajeros
+  const [difficulty, setDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
   const [money, setMoney] = useState<number>(1000);
   const [points, setPoints] = useState<number>(0);
   const [activePassengers, setActivePassengers] = useState<Passenger[]>([]);
@@ -184,6 +188,9 @@ const TrainGame: React.FC = () => {
     setTrainSpeed(speed);
   }, []);
 
+  // Estado para controlar la dirección del tren en la vía actual
+  const [isReversed, setIsReversed] = useState<boolean>(false);
+
   // Manejar click en el botón de movimiento del tren
   const handleMoveTrainClick = useCallback(() => {
     if (!selectedTrack || selectedTrack.path.length === 0) {
@@ -191,16 +198,56 @@ const TrainGame: React.FC = () => {
       return;
     }
 
-    // Avanzar a la siguiente posición en la vía
-    const nextIndex = (currentPathIndex + 1) % selectedTrack.path.length;
+    // Calcular el siguiente índice basado en la dirección actual
+    let nextIndex;
+    if (!isReversed) {
+      // Movimiento normal (hacia adelante)
+      nextIndex = currentPathIndex + 1;
+    } else {
+      // Movimiento inverso (hacia atrás)
+      nextIndex = currentPathIndex - 1;
+    }
+
+    // Verificar si hemos llegado al final o al inicio de la vía
+    const isAtEnd = !isReversed && nextIndex >= selectedTrack.path.length;
+    const isAtStart = isReversed && nextIndex < 0;
+
+    // Si estamos al final o al inicio, buscar una vía conectada
+    if (isAtEnd || isAtStart) {
+      // Buscar una vía conectada
+      const connectingInfo = findConnectingTrack(selectedTrack, tracks, isAtEnd);
+
+      if (connectingInfo) {
+        // Encontramos una vía conectada
+        const nextTrack = tracks.find(t => t.id === connectingInfo.trackId);
+        if (nextTrack) {
+          // Actualizar la vía seleccionada
+          setSelectedTrack(nextTrack);
+          setCurrentTrackId(nextTrack.id);
+          setIsReversed(connectingInfo.reversed);
+          
+          // Establecer el índice inicial en la nueva vía
+          setCurrentPathIndex(connectingInfo.startIndex);
+          setTrainPosition(nextTrack.path[connectingInfo.startIndex]);
+          
+          toast.success(`Conectando con vía ${nextTrack.id}`);
+          return;
+        }
+      }
+      
+      // Si no hay conexión, mostrar mensaje y detener el tren
+      if (isAtEnd) {
+        toast.info("El tren ha llegado al final de la vía y no hay conexión disponible");
+      } else {
+        toast.info("El tren ha llegado al inicio de la vía y no hay conexión disponible");
+      }
+      return;
+    }
+
+    // Movimiento normal dentro de la misma vía
     setCurrentPathIndex(nextIndex);
     setTrainPosition(selectedTrack.path[nextIndex]);
-    
-    // Mostrar información sobre la posición
-    if (nextIndex === selectedTrack.path.length - 1) {
-      toast.info("El tren ha llegado al final de la vía");
-    }
-  }, [selectedTrack, currentPathIndex]);
+  }, [selectedTrack, currentPathIndex, isReversed, tracks]);
 
   // Manejar la selección de una vía
   const handleTrackSelect = useCallback((trackId: string) => {
@@ -210,6 +257,7 @@ const TrainGame: React.FC = () => {
       setCurrentPathIndex(0);
       setTrainPosition(track.path[0]);
       setCurrentTrackId(track.id);
+      setIsReversed(false); // Reiniciar dirección al seleccionar una nueva vía
       toast.success(`Vía seleccionada: ${track.id}`);
     }
   }, [tracks]);
@@ -300,7 +348,8 @@ const TrainGame: React.FC = () => {
       <div className="relative flex-grow">
         {isLoading ? (
           <div className="flex items-center justify-center h-full">
-            <div className="text-xl text-primary animate-pulse">Cargando mapa con calles reales...</div>
+            <div className="text-xl text-primary animate-pulse absolute top-1/4">Cargando mapa con calles reales...</div>
+            <ConsoleBanner isVisible={isLoading} />
           </div>
         ) : (
           <>
@@ -323,6 +372,7 @@ const TrainGame: React.FC = () => {
                 onPassengerDelivery={handlePassengerDelivery}
                 onPassengerExpired={handlePassengerExpired}
                 setActivePassengers={setActivePassengers}
+                difficulty={difficulty}
               />
             </div>
             
@@ -331,48 +381,92 @@ const TrainGame: React.FC = () => {
               <TrackLegend tracks={tracks} />
             </div>
             
-            {/* Panel de control superpuesto (20% más pequeño) */}
+            {/* Panel de control superpuesto (más alargado y mitad de altura) */}
             <div className="absolute bottom-8 left-0 right-0 flex justify-center items-center z-50 pointer-events-none">
-              <div className="bg-background/80 backdrop-blur-sm p-2 rounded-lg shadow-lg border border-primary/20 w-full max-w-[320px] mx-4 pointer-events-auto">
-                <div className="flex flex-col items-center gap-2">
-                  {/* Información de pasajeros integrada */}
-                  <PassengerInfo 
-                    money={money}
-                    points={points}
-                    activePassengers={activePassengers}
-                    pickedUpPassengers={pickedUpPassengers}
-                  />
+              <div className="bg-background/80 backdrop-blur-sm p-2 rounded-lg shadow-lg border border-primary/20 w-full max-w-[840px] mx-4 pointer-events-auto">
+                <div className="flex flex-row items-center gap-3 justify-between h-[70px]">
+                  {/* Sección 1: Información de pasajeros */}
+                  <div className="flex-shrink-0 w-[180px]">
+                    <PassengerInfo 
+                      money={money}
+                      points={points}
+                      activePassengers={activePassengers}
+                      pickedUpPassengers={pickedUpPassengers}
+                    />
+                  </div>
                   
-                  <div className="h-px w-full bg-gray-200 my-1"></div>
+                  {/* Separador vertical */}
+                  <div className="h-[60px] w-px bg-gray-200"></div>
                   
-                  <div className="flex w-full justify-between items-center mb-1">
-                    <h3 className="text-xs font-semibold text-primary">Control de Tren</h3>
+                  {/* Sección 2: Control de Tren */}
+                  <div className="flex-shrink-0 w-[200px] flex flex-col">
+                    <div className="flex justify-between items-center mb-1">
+                      <h3 className="text-xs font-semibold text-primary">Control de Tren</h3>
+                      <div className="text-xs text-muted-foreground">
+                        {selectedTrack ? `Vía: ${selectedTrack.id}` : 'Selecciona vía'}
+                      </div>
+                    </div>
+                    <Button 
+                      onClick={handleMoveTrainClick}
+                      className="bg-primary hover:bg-primary/90 text-primary-foreground w-full text-sm py-1 h-8"
+                      size="sm"
+                    >
+                      <Train className="h-3 w-3 mr-1" />
+                      Mover Tren
+                    </Button>
+                  </div>
+                  
+                  {/* Separador vertical */}
+                  <div className="h-[60px] w-px bg-gray-200"></div>
+                  
+                  {/* Sección 3: Controles de mapa y dificultad */}
+                  <div className="flex-shrink-0 w-[180px] flex flex-col gap-1">
                     <Button 
                       onClick={() => setMapStyle(mapStyle === 'street' ? 'satellite' : 'street')}
                       variant="outline"
                       size="sm"
-                      className="h-6 text-xs px-2"
+                      className="w-full h-8 text-xs"
                     >
                       {mapStyle === 'street' ? 'Ver Satélite' : 'Ver Calles'}
                     </Button>
-                  </div>
-                  <Button 
-                    onClick={handleMoveTrainClick}
-                    className="bg-primary hover:bg-primary/90 text-primary-foreground w-full text-sm py-1 h-8"
-                    size="sm"
-                  >
-                    <Train className="h-3 w-3 mr-1" />
-                    Mover Tren
-                  </Button>
-                  <div className="text-xs text-muted-foreground">
-                    {selectedTrack ? `Vía actual: ${selectedTrack.id}` : 'Selecciona una vía'}
+                    
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-medium text-primary">Dificultad:</span>
+                      <div className="flex gap-1">
+                        <Button 
+                          onClick={() => setDifficulty('easy')}
+                          variant={difficulty === 'easy' ? "default" : "outline"}
+                          size="sm"
+                          className={`h-6 text-xs px-2 ${difficulty === 'easy' ? 'bg-green-600 hover:bg-green-700' : ''}`}
+                        >
+                          Fácil
+                        </Button>
+                        <Button 
+                          onClick={() => setDifficulty('medium')}
+                          variant={difficulty === 'medium' ? "default" : "outline"}
+                          size="sm"
+                          className={`h-6 text-xs px-2 ${difficulty === 'medium' ? 'bg-amber-600 hover:bg-amber-700' : ''}`}
+                        >
+                          Medio
+                        </Button>
+                        <Button 
+                          onClick={() => setDifficulty('hard')}
+                          variant={difficulty === 'hard' ? "default" : "outline"}
+                          size="sm"
+                          className={`h-6 text-xs px-2 ${difficulty === 'hard' ? 'bg-red-600 hover:bg-red-700' : ''}`}
+                        >
+                          Difícil
+                        </Button>
+                      </div>
+                    </div>
                   </div>
                   
-                  <div className="h-px w-full bg-gray-200 my-1"></div>
+                  {/* Separador vertical */}
+                  <div className="h-[60px] w-px bg-gray-200"></div>
                   
-                  {/* Lista de pasajeros */}
-                  <div className="w-full">
-                    <div className="flex justify-between items-center">
+                  {/* Sección 4: Lista de pasajeros */}
+                  <div className="flex-grow max-w-[150px]">
+                    <div className="flex justify-between items-center mb-1">
                       <h3 className="text-xs font-semibold text-primary">Pasajeros</h3>
                       <Button
                         onClick={() => setShowPassengersList(!showPassengersList)}
@@ -381,15 +475,17 @@ const TrainGame: React.FC = () => {
                         className="h-6 text-xs px-2"
                       >
                         <Users className="h-3 w-3 mr-1" />
-                        {showPassengersList ? 'Ocultar' : 'Mostrar'}
+                        {showPassengersList ? '-' : '+'}
                       </Button>
                     </div>
                     
                     {showPassengersList && (
-                      <PassengerList 
-                        activePassengers={activePassengers}
-                        pickedUpPassengers={pickedUpPassengers}
-                      />
+                      <div className="absolute bottom-full left-0 right-0 mb-2 bg-background/90 backdrop-blur-sm p-2 rounded-lg shadow-lg border border-primary/20 max-h-[200px] overflow-y-auto">
+                        <PassengerList 
+                          activePassengers={activePassengers}
+                          pickedUpPassengers={pickedUpPassengers}
+                        />
+                      </div>
                     )}
                   </div>
                 </div>

@@ -1,0 +1,103 @@
+.console-banner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 80%;
+  max-width: 960px; /* 20% más grande que 800px */
+  margin: 0 auto;
+  background-color: rgba(0, 0, 0, 0.7);
+  border-radius: 10px;
+  padding: 10px;
+  color: #fff;
+  font-family: 'Courier New', monospace;
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+  max-height: 40vh; /* Aumentado para mostrar más mensajes */
+  display: flex;
+  flex-direction: column; /* Cambiado a vertical para más espacio */
+  border: 2px solid #000;
+}
+
+.console-header {
+  width: 100%;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid #444;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+
+.console-header h2 {
+  font-size: 1.5rem;
+  font-weight: bold;
+  margin: 0 0 10px 0;
+  color: #ffffff;
+  text-align: center;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  letter-spacing: 1px;
+  text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8);
+}
+
+.progress-container {
+  height: 20px;
+  background-color: #333;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 5px;
+}
+
+.progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #ffffff, #cccccc, #888888, #444444);
+  background-size: 300% 100%;
+  animation: gradient-animation 3s ease infinite;
+  transition: width 0.3s ease;
+}
+
+.progress-text {
+  text-align: center;
+  font-size: 0.9rem;
+  color: #ccc;
+}
+
+.console-messages {
+  overflow-y: auto;
+  flex-grow: 1;
+  width: 100%;
+  padding: 10px;
+  background-color: rgba(0, 0, 0, 0.5);
+  border-radius: 5px;
+  font-size: 0.8rem;
+  line-height: 1.3;
+  max-height: 25vh; /* Altura máxima para mostrar más mensajes */
+}
+
+.console-message {
+  margin-bottom: 5px;
+  padding: 3px 0;
+  border-bottom: 1px solid #333;
+  word-break: break-word;
+}
+
+.console-message:last-child {
+  border-bottom: none;
+}
+
+.error-message {
+  color: #ff5252;
+}
+
+@keyframes gradient-animation {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}

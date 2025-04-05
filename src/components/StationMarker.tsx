@@ -60,7 +60,7 @@ const StationMarker: React.FC<StationMarkerProps> = ({ position, station, onClic
         click: () => onClick(station)
       }}
     >
-      <Tooltip direction="top" offset={[0, -10]} opacity={1} permanent={waitingPassengers.length > 0}>
+      <Tooltip direction="top" offset={[0, -10]} opacity={1} permanent={false}>
         <div className="text-xs">
           <div className="font-medium">{station.name}</div>
           {waitingPassengers.length > 0 && (

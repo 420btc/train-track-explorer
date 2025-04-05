@@ -1,6 +1,7 @@
 
 import * as turf from '@turf/turf';
 import * as polyline from '@mapbox/polyline';
+import { trackGenerationEmitter } from './trackGenerationEmitter';
 // Type definitions
 export interface Coordinates {
   lat: number;
@@ -18,12 +19,12 @@ export interface TrackSegment {
 // Constants
 export const DEFAULT_COORDINATES: Coordinates = { lat: 36.7213, lng: -4.4214 }; // Málaga
 export const DEFAULT_ZOOM = 15;
-const MAX_TRACK_LENGTH = 2500; // Max track length in meters
-const MIN_TRACK_LENGTH = 500; // Min track length in meters
-const URBAN_AREA_RADIUS = 3000; // Max radius for urban rail network in meters
-const STATIONS_PER_TRACK = 5; // Número fijo de estaciones por vía
+const MAX_TRACK_LENGTH = 1500; // Reducido para vías más cortas pero más numerosas
+const MIN_TRACK_LENGTH = 400; // Reducido para permitir vías más cortas
+const URBAN_AREA_RADIUS = 2500; // Reducido para mantener la red más compacta
+const STATIONS_PER_TRACK = 3; // Reducido para tener más estaciones distribuidas en más vías
 const STATIONS_PER_CONNECTION = 2; // Número fijo de estaciones por conexión
-const MIN_STATION_DISTANCE = 0.25; // Distancia mínima entre estaciones en km
+const MIN_STATION_DISTANCE = 0.2; // Reducido para permitir estaciones más cercanas
 
 // Geocoding helper function using direct fetch to Nominatim API
 export const geocodeAddress = async (address: string): Promise<Coordinates> => {
@@ -62,17 +63,85 @@ export const geocodeAddress = async (address: string): Promise<Coordinates> => {
 
 // Generate urban track network based on real streets
 export const generateTrackNetwork = async (center: Coordinates): Promise<TrackSegment[]> => {
+  // Emitir evento de inicio
+  trackGenerationEmitter.emit({
+    progress: 0,
+    message: "Iniciando generación de la red de metro..."
+  });
   try {
     // Create a smaller urban area to stay within city limits
     const tracks: TrackSegment[] = [];
-    const trackColors = ['#1a73e8', '#ea4335', '#34a853', '#fbbc04', '#673ab7'];
+    // Colores más distinguibles para las líneas principales
+    const trackColors = [
+      '#1a73e8', // Azul Google
+      '#ea4335', // Rojo Google
+      '#34a853', // Verde Google
+      '#fbbc04', // Amarillo Google
+      '#FF5722', // Naranja profundo
+      '#009688', // Verde azulado
+      '#E91E63'  // Rosa
+    ];
     
-    // Generate 4-7 lines (like metro lines)
-    const lineCount = Math.floor(Math.random() * 4) + 4;
+    // Generate 6-9 lines (like metro lines) - Aumentado para una red más densa
+    const lineCount = Math.floor(Math.random() * 4) + 6;
     console.log(`Generating ${lineCount} metro lines...`);
     
-    // Ordenar colores por longitud deseada: azul (más largo), amarillo, verde, rojo, morado
-    const orderedTrackColors = ['#1a73e8', '#fbbc04', '#34a853', '#ea4335', '#673ab7'];
+    trackGenerationEmitter.emit({
+      progress: 5,
+      message: `Generando ${lineCount} líneas de metro...`
+    });
+    
+    // Mapa para controlar los intentos por línea y evitar bucles infinitos
+    const lineAttempts = new Map<number, number>();
+    
+    // Ordenar colores por longitud deseada: azul (más largo), amarillo, verde, rojo, naranja, verde azulado, rosa
+    const orderedTrackColors = ['#1a73e8', '#fbbc04', '#34a853', '#ea4335', '#FF5722', '#009688', '#E91E63'];
+    
+    // Función para verificar si una nueva ruta se superpone demasiado con rutas existentes
+    const checkOverlappingRoutes = (newPath: Coordinates[], existingTracks: TrackSegment[]): boolean => {
+      // Si no hay vías existentes, no hay superposición
+      if (existingTracks.length === 0) return false;
+      
+      // Convertir la nueva ruta a una línea de turf
+      const newLine = turf.lineString(newPath.map(p => [p.lng, p.lat]));
+      
+      // Verificar cada vía existente
+      for (const track of existingTracks) {
+        // Solo verificar vías principales, no conexiones
+        if (!track.id.startsWith('track-')) continue;
+        
+        // Convertir la vía existente a una línea de turf
+        const existingLine = turf.lineString(track.path.map(p => [p.lng, p.lat]));
+        
+        // Calcular la superposición entre las líneas
+        try {
+          // Usar una aproximación con distancias punto a línea
+          let overlappingPoints = 0;
+          const threshold = 0.03; // 30 metros - Reducido para ser más permisivo
+          
+          // Verificar cada punto de la nueva ruta
+          for (let i = 0; i < newPath.length; i += Math.max(1, Math.floor(newPath.length / 10))) {
+            const point = turf.point([newPath[i].lng, newPath[i].lat]);
+            const distance = turf.pointToLineDistance(point, existingLine, {units: 'kilometers'});
+            
+            if (distance < threshold) {
+              overlappingPoints++;
+            }
+          }
+          
+          // Si más del 60% de los puntos se superponen, consideramos que hay demasiada superposición
+          // Aumentado del 40% al 60% para ser más permisivo
+          if (overlappingPoints > (newPath.length / 10) * 0.6) {
+            console.log(`Detected significant overlap with track ${track.id}, trying another route`);
+            return true;
+          }
+        } catch (error) {
+          console.error('Error checking route overlap:', error);
+        }
+      }
+      
+      return false;
+    };
     
     // Función auxiliar para crear vías de respaldo si las APIs fallan
     const createFallbackTrack = (id: string, startPoint: Coordinates, endPoint: Coordinates, color: string, weight: number): TrackSegment => {
@@ -121,6 +190,12 @@ export const generateTrackNetwork = async (center: Coordinates): Promise<TrackSe
     
     // Generar líneas principales
     for (let i = 0; i < lineCount; i++) {
+      // Calcular progreso basado en la línea actual (del 5% al 50%)
+      const lineProgress = 5 + Math.floor((i / lineCount) * 45);
+      trackGenerationEmitter.emit({
+        progress: lineProgress,
+        message: `Generando línea ${i+1} de ${lineCount}...`
+      });
       // Generate a random angle for this line's direction
       const angle = (i * (360 / lineCount)) + (Math.random() * 30 - 15);
       const color = orderedTrackColors[i % orderedTrackColors.length];
@@ -178,14 +253,42 @@ export const generateTrackNetwork = async (center: Coordinates): Promise<TrackSe
             }));
             
             if (path.length > 0) {
-              tracks.push({
-                id: `track-${i}`,
-                path: path,
-                distance: data.routes[0].distance,
-                color: color,
-                weight: 4
-              });
-              console.log(`Successfully created line ${i+1} with ${path.length} points`);
+              // Verificar si la nueva ruta se superpone demasiado con rutas existentes
+              const hasSignificantOverlap = checkOverlappingRoutes(path, tracks);
+              
+              if (!hasSignificantOverlap) {
+                tracks.push({
+                  id: `track-${i}`,
+                  path: path,
+                  distance: data.routes[0].distance,
+                  color: color,
+                  weight: 4
+                });
+                console.log(`Successfully created line ${i+1} with ${path.length} points`);
+              } else {
+                // Si hay superposición significativa, intentar con otro ángulo
+                console.log(`Line ${i+1} has significant overlap with existing tracks, trying a different angle`);
+                
+                // Incrementar contador de intentos para esta línea
+                const attempts = lineAttempts.get(i) || 0;
+                lineAttempts.set(i, attempts + 1);
+                
+                // Si ya hemos intentado demasiadas veces, aceptar la superposición
+                if (attempts >= 5) {
+                  console.log(`Accepting line ${i+1} after ${attempts} attempts despite overlap`);
+                  tracks.push({
+                    id: `track-${i}`,
+                    path: path,
+                    distance: data.routes[0].distance,
+                    color: color,
+                    weight: 4
+                  });
+                } else {
+                  // Cambiar el ángulo y reintentar en la próxima iteración
+                  i--;
+                  continue;
+                }
+              }
             } else {
               throw new Error('Decoded path is empty');
             }
@@ -199,8 +302,31 @@ export const generateTrackNetwork = async (center: Coordinates): Promise<TrackSe
               color,
               4
             );
-            tracks.push(fallbackTrack);
-            console.log(`Created fallback line ${i+1} due to polyline error`);
+            
+            // Verificar si la ruta de respaldo se superpone demasiado con rutas existentes
+            const hasSignificantOverlap = checkOverlappingRoutes(fallbackTrack.path, tracks);
+            
+            if (!hasSignificantOverlap) {
+              tracks.push(fallbackTrack);
+              console.log(`Created fallback line ${i+1} due to polyline error`);
+            } else {
+              // Si hay superposición significativa, intentar con otro ángulo
+              console.log(`Fallback line ${i+1} has significant overlap with existing tracks, trying a different angle`);
+              
+              // Incrementar contador de intentos para esta línea
+              const attempts = lineAttempts.get(i) || 0;
+              lineAttempts.set(i, attempts + 1);
+              
+              // Si ya hemos intentado demasiadas veces, aceptar la superposición
+              if (attempts >= 5) {
+                console.log(`Accepting fallback line ${i+1} after ${attempts} attempts despite overlap`);
+                tracks.push(fallbackTrack);
+              } else {
+                // Cambiar el ángulo y reintentar en la próxima iteración
+                i--;
+                continue;
+              }
+            }
           }
         } else {
           throw new Error('No routes returned from OSRM API');
@@ -215,8 +341,31 @@ export const generateTrackNetwork = async (center: Coordinates): Promise<TrackSe
           color,
           4
         );
-        tracks.push(fallbackTrack);
-        console.log(`Created fallback line ${i+1} due to API error`);
+        
+        // Verificar si la ruta de respaldo se superpone demasiado con rutas existentes
+        const hasSignificantOverlap = checkOverlappingRoutes(fallbackTrack.path, tracks);
+        
+        if (!hasSignificantOverlap) {
+          tracks.push(fallbackTrack);
+          console.log(`Created fallback line ${i+1} due to API error`);
+        } else {
+          // Si hay superposición significativa, intentar con otro ángulo
+          console.log(`Fallback line ${i+1} has significant overlap with existing tracks, trying a different angle`);
+          
+          // Incrementar contador de intentos para esta línea
+          const attempts = lineAttempts.get(i) || 0;
+          lineAttempts.set(i, attempts + 1);
+          
+          // Si ya hemos intentado demasiadas veces, aceptar la superposición
+          if (attempts >= 5) {
+            console.log(`Accepting fallback line ${i+1} after ${attempts} attempts despite overlap`);
+            tracks.push(fallbackTrack);
+          } else {
+            // Cambiar el ángulo y reintentar en la próxima iteración
+            i--;
+            continue;
+          }
+        }
       }
     }
     
@@ -252,12 +401,13 @@ export const generateTrackNetwork = async (center: Coordinates): Promise<TrackSe
     if (tracks.length >= 2) {
       console.log('Creating connections between tracks...');
       let connectionsAdded = 0;
+      const maxConnections = Math.min(20, lineCount * 3); // Más conexiones para una red más densa
       
       // Find potential connection points between tracks
-      for (let i = 0; i < tracks.length - 1 && connectionsAdded < 10; i++) {
-        for (let j = i + 1; j < tracks.length && connectionsAdded < 10; j++) {
-          // Aumentamos la probabilidad de conexión para tener una red más conectada
-          if (Math.random() > 0.4) {
+      for (let i = 0; i < tracks.length - 1 && connectionsAdded < maxConnections; i++) {
+        for (let j = i + 1; j < tracks.length && connectionsAdded < maxConnections; j++) {
+          // Aumentamos aún más la probabilidad de conexión para tener una red más densa e interconectada
+          if (Math.random() > 0.2) {
             const track1 = tracks[i];
             const track2 = tracks[j];
             
@@ -308,7 +458,7 @@ export const generateTrackNetwork = async (center: Coordinates): Promise<TrackSe
                         id: `connection-${i}-${j}`,
                         path: path,
                         distance: data.routes[0].distance,
-                        color: '#9C27B0', // Color morado para conexiones
+                        color: '#00BCD4', // Color cian para conexiones (más distintivo)
                         weight: 3
                       });
                       connectionsAdded++;
@@ -323,7 +473,7 @@ export const generateTrackNetwork = async (center: Coordinates): Promise<TrackSe
                       `connection-${i}-${j}`,
                       point1,
                       point2,
-                      '#9C27B0',
+                      '#00BCD4',
                       3
                     );
                     tracks.push(fallbackTrack);
@@ -341,7 +491,7 @@ export const generateTrackNetwork = async (center: Coordinates): Promise<TrackSe
                     `connection-${i}-${j}`,
                     point1,
                     point2,
-                    '#9C27B0',
+                    '#00BCD4',
                     3
                   );
                   tracks.push(fallbackTrack);
@@ -681,4 +831,71 @@ export const findClosestTrack = (point: Coordinates, tracks: TrackSegment[]): st
   });
   
   return closestTrack;
+};
+
+// Función para encontrar la vía más cercana al final de la vía actual
+// y determinar si debemos empezar desde el principio o el final de la nueva vía
+export interface ConnectingTrackInfo {
+  trackId: string;      // ID de la vía conectada
+  startIndex: number;   // Índice por donde empezar (0 o último)
+  reversed: boolean;    // Si debemos recorrer la vía en sentido inverso
+}
+
+export const findConnectingTrack = (
+  currentTrack: TrackSegment,
+  allTracks: TrackSegment[],
+  isAtEnd: boolean = true // Por defecto, buscamos desde el final de la vía actual
+): ConnectingTrackInfo | null => {
+  if (!allTracks.length || !currentTrack.path.length) return null;
+  
+  // Punto desde el que buscamos la conexión (inicio o final de la vía actual)
+  const connectionPoint = isAtEnd 
+    ? currentTrack.path[currentTrack.path.length - 1] // Último punto si estamos al final
+    : currentTrack.path[0]; // Primer punto si estamos al inicio
+  
+  let closestTrack: ConnectingTrackInfo | null = null;
+  let minDistance = Infinity;
+  
+  // Buscar entre todas las vías excepto la actual
+  allTracks.forEach(track => {
+    // Ignorar la vía actual
+    if (track.id === currentTrack.id || !track.path.length) return;
+    
+    // Comprobar distancia al inicio de la vía
+    const startPoint = track.path[0];
+    const startDistance = calculateDistance(connectionPoint, startPoint);
+    
+    // Comprobar distancia al final de la vía
+    const endPoint = track.path[track.path.length - 1];
+    const endDistance = calculateDistance(connectionPoint, endPoint);
+    
+    // Determinar el punto más cercano (inicio o final de la vía)
+    if (startDistance < minDistance) {
+      minDistance = startDistance;
+      closestTrack = {
+        trackId: track.id,
+        startIndex: 0, // Empezar desde el principio
+        reversed: false // No invertir el recorrido
+      };
+    }
+    
+    if (endDistance < minDistance) {
+      minDistance = endDistance;
+      closestTrack = {
+        trackId: track.id,
+        startIndex: track.path.length - 1, // Empezar desde el final
+        reversed: true // Invertir el recorrido
+      };
+    }
+  });
+  
+  // Solo conectar si la distancia es razonable (menos de 200 metros)
+  return minDistance < 0.2 ? closestTrack : null;
+};
+
+// Función auxiliar para calcular la distancia entre dos puntos
+const calculateDistance = (point1: Coordinates, point2: Coordinates): number => {
+  const p1 = turf.point([point1.lng, point1.lat]);
+  const p2 = turf.point([point2.lng, point2.lat]);
+  return turf.distance(p1, p2, {units: 'kilometers'});
 };

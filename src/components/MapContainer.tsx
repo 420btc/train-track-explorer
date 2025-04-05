@@ -50,6 +50,7 @@ interface MapContainerProps {
   onPassengerDelivery: (passenger: Passenger) => void;
   onPassengerExpired: (passenger: Passenger) => void;
   setActivePassengers: Dispatch<SetStateAction<Passenger[]>>;
+  difficulty: 'easy' | 'medium' | 'hard';
 }
 
 const MapContainer: React.FC<MapContainerProps> = ({ 
@@ -69,7 +70,8 @@ const MapContainer: React.FC<MapContainerProps> = ({
   onPassengerPickup,
   onPassengerDelivery,
   onPassengerExpired,
-  setActivePassengers
+  setActivePassengers,
+  difficulty
 }) => {
   const [selectedStation, setSelectedStation] = useState<Station | null>(null);
   const animationFrameRef = useRef(null);
@@ -160,6 +162,7 @@ const MapContainer: React.FC<MapContainerProps> = ({
           pickedUpPassengers={pickedUpPassengers}
           activePassengers={activePassengers}
           setActivePassengers={setActivePassengers}
+          difficulty={difficulty}
         />
       </LeafletMap>
       
@@ -193,6 +196,7 @@ interface PassengerSystemControllerProps {
   pickedUpPassengers: Passenger[];
   activePassengers: Passenger[];
   setActivePassengers: Dispatch<SetStateAction<Passenger[]>>;
+  difficulty: 'easy' | 'medium' | 'hard';
 }
 
 const PassengerSystemController: React.FC<PassengerSystemControllerProps> = ({
@@ -204,7 +208,8 @@ const PassengerSystemController: React.FC<PassengerSystemControllerProps> = ({
   onPassengerExpired,
   pickedUpPassengers,
   activePassengers,
-  setActivePassengers
+  setActivePassengers,
+  difficulty
 }) => {
   const map = useMap();
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -344,30 +349,54 @@ const PassengerSystemController: React.FC<PassengerSystemControllerProps> = ({
     const drawPassengers = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       
-      // Dibujar pasajeros
-      activePassengers.forEach(passenger => {
-        // Convertir lat/lng a coordenadas de píxeles
-        const latLng = L.latLng(passenger.position.lat, passenger.position.lng);
+      // Dibujar directamente todos los pasajeros activos sin agrupar
+      // Esto asegura que todos los pasajeros se muestren correctamente
+      activePassengers.forEach((passenger, index) => {
+        if (passenger.isPickedUp) return; // No dibujar pasajeros recogidos
+        
+        // Obtener la estación de origen del pasajero
+        const station = passenger.origin;
+        
+        // Convertir coordenadas de la estación a píxeles
+        const latLng = L.latLng(station.position.lat, station.position.lng);
         const point = map.latLngToContainerPoint(latLng);
         
-        // Aplicar offset animado (pequeño movimiento en círculo)
-        const time = Date.now() * 0.001; // Convertir a segundos para una animación más suave
-        const animX = Math.sin(time + passenger.animationOffset) * 2;
-        const animY = Math.cos(time + passenger.animationOffset) * 2;
+        // Radio base más pequeño alrededor de la estación (más cerca de la bola roja)
+        const baseRadius = 8; // Reducido de 15 a 8 para estar más cerca de la estación
         
-        // Dibujar pasajero (punto verde, 1/3 del tamaño de las estaciones)
+        // Crear un movimiento aleatorio pero consistente para cada pasajero
+        // Usamos el ID del pasajero para crear un offset único
+        const passengerId = parseInt(passenger.id.replace(/\D/g, '').slice(-4)) || index;
+        const uniqueOffset = passengerId / 1000;
+        
+        // Obtener el tiempo actual para la animación, pero más lento
+        const currentTime = Date.now() * 0.0005; // Reducido a la mitad para movimiento más lento
+        
+        // Crear un patrón de movimiento más aleatorio y menos elíptico
+        const time1 = currentTime + uniqueOffset;
+        
+        // Movimiento más aleatorio y menos predecible
+        // Usamos un patrón más simple con variaciones pequeñas
+        const randomAngle = time1 * 0.5 + (passengerId * Math.PI * 2) / 10;
+        const randomDistance = (Math.sin(time1 * 0.2) * 0.2 + 0.8) * baseRadius; // Distancia variable entre 0.6 y 1.0 del radio base
+        
+        // Convertir a coordenadas cartesianas para un movimiento circular aleatorio
+        const moveX = Math.cos(randomAngle) * randomDistance;
+        const moveY = Math.sin(randomAngle) * randomDistance;
+        
+        // Dibujar pasajero (punto verde pequeño)
         ctx.beginPath();
         ctx.arc(
-          point.x + passenger.offsetX + animX, 
-          point.y + passenger.offsetY + animY, 
-          4, // Radio de 4px (estaciones son 12px)
+          point.x + moveX, 
+          point.y + moveY, 
+          2.5, // Radio más pequeño de 2.5px
           0, 
           Math.PI * 2
         );
         ctx.fillStyle = '#22c55e'; // Color verde
         ctx.fill();
         ctx.strokeStyle = '#166534'; // Borde verde oscuro
-        ctx.lineWidth = 1;
+        ctx.lineWidth = 0.5; // Línea más fina
         ctx.stroke();
       });
       
@@ -384,12 +413,12 @@ const PassengerSystemController: React.FC<PassengerSystemControllerProps> = ({
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [map, activePassengers]);
+  }, [map, activePassengers, stations, trainPosition]);
 
   return (
     <canvas 
       ref={canvasRef} 
-      className="absolute top-0 left-0 pointer-events-none z-10"
+      className="absolute top-0 left-0 pointer-events-none z-[1000]"
     />
   );
 };
