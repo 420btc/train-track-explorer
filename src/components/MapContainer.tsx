@@ -87,9 +87,9 @@ const MapContainer: React.FC<MapContainerProps> = ({
           <Polyline
             key={track.id}
             positions={track.path.map(coord => [coord.lat, coord.lng])}
-            color="#3b82f6"
-            weight={5}
-            opacity={0.8}
+            color={track.id === currentTrackId ? "#ef4444" : "#3b82f6"}
+            weight={track.id === currentTrackId ? 6 : 5}
+            opacity={track.id === currentTrackId ? 1 : 0.7}
           />
         ))}
         
