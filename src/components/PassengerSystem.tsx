@@ -34,6 +34,11 @@ interface PassengerSystemProps {
   onPassengerExpired: (passenger: Passenger) => void;
   pickedUpPassengers: Passenger[];
   difficulty: 'easy' | 'medium' | 'hard';
+  currentLevel?: {
+    passengerFrequency: number; // En segundos
+    maxPassengers: number;
+  };
+  trainCapacity?: number;
 }
 
 const PassengerSystem: React.FC<PassengerSystemProps> = ({
@@ -44,7 +49,9 @@ const PassengerSystem: React.FC<PassengerSystemProps> = ({
   onPassengerDelivery,
   onPassengerExpired,
   pickedUpPassengers,
-  difficulty
+  difficulty,
+  currentLevel,
+  trainCapacity = 4 // Capacidad por defecto si no se especifica
 }) => {
   const [passengers, setPassengers] = useState<Passenger[]>([]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -65,30 +72,42 @@ const PassengerSystem: React.FC<PassengerSystemProps> = ({
     easy: {
       maxPassengersPerStation: 2,
       generationInterval: 45000, // 45 segundos
-      expirationTime: 120000,    // 2 minutos
+      expirationTime: 300000,    // 5 minutos
       stationProbability: 0.3,   // 30% de estaciones generan pasajeros
       pickupRadius: 15           // Radio de recogida más grande
     },
     medium: {
       maxPassengersPerStation: 4,
       generationInterval: 30000, // 30 segundos
-      expirationTime: 90000,     // 1.5 minutos
+      expirationTime: 270000,    // 4.5 minutos
       stationProbability: 0.5,   // 50% de estaciones generan pasajeros
       pickupRadius: 10           // Radio de recogida estándar
     },
     hard: {
       maxPassengersPerStation: 6,
       generationInterval: 20000, // 20 segundos
-      expirationTime: 60000,     // 1 minuto
+      expirationTime: 240000,    // 4 minutos
       stationProbability: 0.7,   // 70% de estaciones generan pasajeros
       pickupRadius: 8            // Radio de recogida más pequeño
     }
   };
   
-  // Obtener configuración actual según dificultad
-  const currentSettings = difficultySettings[difficulty];
+  // Obtener configuración base según dificultad
+  const baseSettings = difficultySettings[difficulty];
   
-  // Generate passengers based on difficulty
+  // Si hay un nivel actual, ajustar la configuración según sus parámetros
+  const currentSettings = {
+    ...baseSettings,
+    // Usar la frecuencia de generación del nivel si está disponible
+    generationInterval: currentLevel?.passengerFrequency ? 
+      currentLevel.passengerFrequency * 1000 : // Convertir segundos a milisegundos
+      baseSettings.generationInterval,
+    // Usar el máximo de pasajeros del nivel si está disponible
+    maxTotalPassengers: currentLevel?.maxPassengers || 
+      (difficulty === 'easy' ? 6 : difficulty === 'medium' ? 12 : 18)
+  };
+  
+  // Generate passengers based on difficulty and level settings
   useEffect(() => {
     // Reinicializar las estaciones que pueden generar pasajeros según dificultad
     stations.forEach(station => {
@@ -97,12 +116,8 @@ const PassengerSystem: React.FC<PassengerSystemProps> = ({
     
     const generatePassengers = () => {
       // Si hay demasiados pasajeros activos, no generar más
-      // Limitamos a máximo 18 pasajeros en total, distribuidos según dificultad
-      const maxTotalPassengers = {
-        easy: 6,
-        medium: 12,
-        hard: 18
-      }[difficulty];
+      // Usar el máximo de pasajeros del nivel o la configuración base
+      const maxTotalPassengers = currentSettings.maxTotalPassengers;
       
       if (passengers.length >= maxTotalPassengers) {
         console.log(`Límite de pasajeros alcanzado (${passengers.length}/${maxTotalPassengers}). No se generarán más hasta que se recojan algunos.`);
@@ -196,6 +211,8 @@ const PassengerSystem: React.FC<PassengerSystemProps> = ({
     
     // Usamos una variable de referencia para evitar actualizaciones en cascada
     const passengerInteractionRef = useRef(false);
+    // Referencia para la última posición del tren
+    const lastPositionRef = useRef(trainPos);
     
     const checkPassengerInteractions = () => {
       // Si ya estamos procesando interacciones, salir para evitar bucles
@@ -218,8 +235,8 @@ const PassengerSystem: React.FC<PassengerSystemProps> = ({
               destinationPos.lng
             );
             
-            // Radio de entrega es un poco más grande que el de recogida para facilitar la entrega
-            const deliveryRadius = settings.pickupRadius * 1.2;
+            // Radio de entrega aumentado para mayor fiabilidad
+            const deliveryRadius = settings.pickupRadius * 1.5;
             
             if (distance <= deliveryRadius) {
               // Passenger delivered
@@ -246,10 +263,27 @@ const PassengerSystem: React.FC<PassengerSystemProps> = ({
             passenger.position.lng
           );
           
-          if (distance <= settings.pickupRadius) {
-            pickupFn(passenger);
-            passenger.isPickedUp = true;
-            hasChanges = true;
+          // Radio de recogida aumentado para mayor fiabilidad
+          const enhancedPickupRadius = settings.pickupRadius * 2; // Duplicado para asegurar la recogida
+          
+          if (distance <= enhancedPickupRadius) {
+            // Verificar si hay espacio en el tren para recoger pasajeros
+            const currentPickedUpCount = pickedUpPassengers.length;
+            
+            // Imprimir información de depuración
+            console.log(`Pasajero cerca: Distancia=${distance.toFixed(2)}, Radio=${enhancedPickupRadius.toFixed(2)}`);
+            console.log(`Capacidad del tren: ${currentPickedUpCount}/${trainCapacity}`);
+            
+            if (currentPickedUpCount >= trainCapacity) {
+              // No hacer nada si el tren está lleno
+              console.log(`Tren lleno (${currentPickedUpCount}/${trainCapacity}), no se pueden recoger más pasajeros`);
+            } else {
+              // Hay espacio, recoger al pasajero
+              console.log(`Recogiendo pasajero en posición (${passenger.position.lat.toFixed(4)}, ${passenger.position.lng.toFixed(4)})`);
+              pickupFn(passenger);
+              passenger.isPickedUp = true;
+              hasChanges = true;
+            }
           }
           
           return true; // Keep in array
@@ -258,29 +292,28 @@ const PassengerSystem: React.FC<PassengerSystemProps> = ({
         // Liberar el bloqueo después de procesar
         setTimeout(() => {
           passengerInteractionRef.current = false;
-        }, 100);
+        }, 50); // Reducido para permitir verificaciones más frecuentes
         
         // Solo actualizar si hay cambios
         return hasChanges ? updatedPassengers : prevPassengers;
       });
     };
     
-    // Check interactions every 500ms for real-time updates
+    // Verificar interacciones aún más frecuentemente (100ms en lugar de 200ms)
     const interactionInterval = setInterval(() => {
-      if (!isMoving && !passengerInteractionRef.current) {
-        checkPassengerInteractions();
-      }
-    }, 500);
+      checkPassengerInteractions();
+    }, 100);
     
-    // También verificar inmediatamente cuando cambia la posición del tren
-    // pero solo si no estamos ya procesando interacciones
-    if (!isMoving && !passengerInteractionRef.current) {
-      // Retrasar ligeramente para evitar colisiones con otros efectos
-      setTimeout(checkPassengerInteractions, 50);
+    // Verificar cuando cambia la posición del tren
+    if (trainPos && 
+        (lastPositionRef.current.lat !== trainPos.lat || 
+         lastPositionRef.current.lng !== trainPos.lng)) {
+      lastPositionRef.current = trainPos;
+      setTimeout(checkPassengerInteractions, 10);
     }
     
     return () => clearInterval(interactionInterval);
-  }, []);  // Eliminamos todas las dependencias para evitar el bucle
+  }, [trainPosition]);  // Añadimos trainPosition como dependencia para detectar cambios
 
   // Render passengers on canvas
   useEffect(() => {
