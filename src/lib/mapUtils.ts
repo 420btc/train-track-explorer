@@ -79,63 +79,63 @@ async function getRouteFromOSRM(start: Coordinates, end: Coordinates): Promise<C
   }
 }
 
+// Generate random points around a center point
+function generateRandomPointsAround(center: Coordinates, count: number, radius: number): Coordinates[] {
+  const points: Coordinates[] = [];
+  
+  for (let i = 0; i < count; i++) {
+    // Create points in all directions (N, NE, E, SE, S, SW, W, NW)
+    const angle = (i * Math.PI * 2) / count;
+    // Add some randomness to the distance
+    const distance = radius * (0.7 + (Math.random() * 0.6)); // between 0.7 and 1.3 of radius
+    
+    const lat = center.lat + distance * Math.cos(angle) / 100;
+    const lng = center.lng + distance * Math.sin(angle) / 100;
+    
+    points.push({ lat, lng });
+  }
+  
+  return points;
+}
+
 // Generate track network based on real streets
 export const generateTrackNetwork = async (center: Coordinates): Promise<TrackSegment[]> => {
   const tracks: TrackSegment[] = [];
   
-  // Definir puntos importantes alrededor del centro
-  const pointNorth = { lat: center.lat + 0.005, lng: center.lng + 0.002 };
-  const pointEast = { lat: center.lat, lng: center.lng + 0.005 };
-  const pointSouth = { lat: center.lat - 0.005, lng: center.lng + 0.002 };
-  const pointWest = { lat: center.lat, lng: center.lng - 0.005 };
-  
   try {
-    // Obtener rutas reales usando OSRM
-    const westToCenterPath = await getRouteFromOSRM(pointWest, center);
-    const centerToEastPath = await getRouteFromOSRM(center, pointEast);
-    const centerToNorthPath = await getRouteFromOSRM(center, pointNorth);
-    const centerToSouthPath = await getRouteFromOSRM(center, pointSouth);
-    const northLoopPath = await getRouteFromOSRM(pointNorth, { lat: center.lat + 0.002, lng: center.lng + 0.005 });
-    const southLoopPath = await getRouteFromOSRM(pointSouth, { lat: center.lat - 0.002, lng: center.lng + 0.005 });
+    // Generate random points around the center
+    const pointCount = 8; // Points in all directions
+    const radius = 10;    // Radius in ~kilometers * 100
+    const randomPoints = generateRandomPointsAround(center, pointCount, radius);
     
-    // Crear segmentos de vía
-    const mainWestLine: TrackSegment = {
-      id: 'track-1',
-      path: westToCenterPath,
-      next: ['track-2', 'track-3', 'track-6']
-    };
+    // Create routes connecting the center with random points
+    const routePromises = randomPoints.map(point => getRouteFromOSRM(center, point));
+    const routes = await Promise.all(routePromises);
     
-    const mainEastLine: TrackSegment = {
-      id: 'track-6',
-      path: centerToEastPath,
-      next: []
-    };
+    // Create track segments for each route
+    for (let i = 0; i < routes.length; i++) {
+      const trackId = `track-${i + 1}`;
+      const nextTrackIds = i < routes.length - 1 ? [`track-${i + 2}`] : ['track-1']; // Circular connection
+      
+      tracks.push({
+        id: trackId,
+        path: routes[i],
+        next: nextTrackIds
+      });
+    }
     
-    const northBranch: TrackSegment = {
-      id: 'track-2',
-      path: centerToNorthPath,
-      next: ['track-4']
-    };
-    
-    const southBranch: TrackSegment = {
-      id: 'track-3',
-      path: centerToSouthPath,
-      next: ['track-5']
-    };
-    
-    const northLoop: TrackSegment = {
-      id: 'track-4',
-      path: northLoopPath,
-      next: []
-    };
-    
-    const southLoop: TrackSegment = {
-      id: 'track-5',
-      path: southLoopPath,
-      next: []
-    };
-    
-    tracks.push(mainWestLine, northBranch, southBranch, northLoop, southLoop, mainEastLine);
+    // Create some additional connections between tracks for more complex networks
+    for (let i = 0; i < 3; i++) {
+      const sourceTrackId = `track-${1 + Math.floor(Math.random() * routes.length)}`;
+      const targetTrackId = `track-${1 + Math.floor(Math.random() * routes.length)}`;
+      
+      if (sourceTrackId !== targetTrackId) {
+        const sourceTrack = tracks.find(t => t.id === sourceTrackId);
+        if (sourceTrack && !sourceTrack.next.includes(targetTrackId)) {
+          sourceTrack.next.push(targetTrackId);
+        }
+      }
+    }
   } catch (error) {
     console.error('Error generating track network:', error);
     

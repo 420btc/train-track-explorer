@@ -78,10 +78,10 @@ const TrainGame: React.FC = () => {
   return (
     <div className="flex flex-col h-screen">
       <GameHeader 
-        trainSpeed={trainSpeed} 
+        speed={trainSpeed} 
         onSpeedChange={handleSpeedChange} 
       />
-      <SearchBar onSearch={handleSearch} />
+      <SearchBar onSearch={handleSearch} isLoading={isLoading} />
       
       {isLoading ? (
         <div className="flex items-center justify-center flex-grow">

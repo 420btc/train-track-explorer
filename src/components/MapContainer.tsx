@@ -4,6 +4,8 @@ import { MapContainer as LeafletMapContainer, TileLayer, Polyline, useMap, useMa
 import { Coordinates, TrackSegment, findClosestPointOnTrack } from '@/lib/mapUtils';
 import TrainMarker from './TrainMarker';
 import StationMarker from './StationMarker';
+import { Button } from './ui/button';
+import { Train } from 'lucide-react';
 import { toast } from 'sonner';
 import 'leaflet/dist/leaflet.css';
 
@@ -66,16 +68,64 @@ const MapContainer: React.FC<MapContainerProps> = ({
   onTrainMove,
   speed
 }) => {
+  const currentTrack = tracks.find(track => track.id === currentTrackId);
+  const [currentPathIndex, setCurrentPathIndex] = useState(0);
+  
   // Find the next station
   const nextStation = stations.find(station => station.trackId === currentTrackId);
   
+  // Function to move train forward
+  const moveTrainForward = () => {
+    if (currentTrack && currentPathIndex < currentTrack.path.length - 1) {
+      // Move to next point in the current track
+      const nextPosition = currentTrack.path[currentPathIndex + 1];
+      onTrainMove(nextPosition, currentTrackId);
+      setCurrentPathIndex(currentPathIndex + 1);
+    } else if (currentTrack && currentTrack.next.length > 0) {
+      // Move to the next track
+      const nextTrackId = currentTrack.next[0];
+      const nextTrack = tracks.find(t => t.id === nextTrackId);
+      
+      if (nextTrack && nextTrack.path.length > 0) {
+        onTrainMove(nextTrack.path[0], nextTrackId);
+        setCurrentPathIndex(0);
+        toast.info(`Cambiando a la vía ${nextTrackId}`);
+      }
+    } else {
+      toast.info("Fin de la vía");
+    }
+  };
+  
+  // Update path index when current track changes
+  useEffect(() => {
+    if (currentTrack && currentTrack.path.length > 0) {
+      // Find the closest point in the current track path to the train position
+      let closestIndex = 0;
+      let minDistance = Number.MAX_VALUE;
+      
+      currentTrack.path.forEach((point, index) => {
+        const dx = point.lat - trainPosition.lat;
+        const dy = point.lng - trainPosition.lng;
+        const distance = dx * dx + dy * dy;
+        
+        if (distance < minDistance) {
+          minDistance = distance;
+          closestIndex = index;
+        }
+      });
+      
+      setCurrentPathIndex(closestIndex);
+    }
+  }, [currentTrackId, currentTrack, trainPosition]);
+  
   return (
-    <div className="relative w-full h-screen">
+    <div className="relative w-full h-full">
       <LeafletMapContainer
         center={[center.lat, center.lng]}
         zoom={zoom}
         zoomControl={false}
         attributionControl={false}
+        className="h-full w-full"
       >
         <TileLayer
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -114,6 +164,17 @@ const MapContainer: React.FC<MapContainerProps> = ({
         <ChangeMapView center={center} zoom={zoom} />
         <MapEvents tracks={tracks} onTrainMove={onTrainMove} />
       </LeafletMapContainer>
+      
+      {/* Train movement button */}
+      <div className="absolute bottom-5 right-5 z-[1000]">
+        <Button 
+          className="flex gap-2 h-16 w-16 rounded-full" 
+          onClick={moveTrainForward}
+          size="lg"
+        >
+          <Train className="h-8 w-8" />
+        </Button>
+      </div>
     </div>
   );
 };
