@@ -389,7 +389,11 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
   useEffect(() => {
     if (!autoMode) return;
     
-    // Crear un temporizador para mover el tren cada segundo
+    // Calcular el intervalo de tiempo basado en la velocidad
+    // Velocidad 1% = 2000ms (muy lento), Velocidad 100% = 100ms (muy rápido)
+    const interval = Math.max(100, 2000 - (trainSpeed * 19));
+    
+    // Crear un temporizador para mover el tren automáticamente
     const intervalId = setInterval(() => {
       if (!selectedTrack || selectedTrack.path.length === 0) {
         setAutoMode(false);
@@ -399,10 +403,10 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
       
       // Mover el tren un paso adelante
       handleMoveTrainClick();
-    }, 1000); // 1 segundo
+    }, interval);
     
     return () => clearInterval(intervalId);
-  }, [autoMode, selectedTrack, handleMoveTrainClick]);
+  }, [autoMode, selectedTrack, handleMoveTrainClick, trainSpeed]);
 
   // Manejar la selección de una vía
   const handleTrackSelect = useCallback((trackId: string) => {
