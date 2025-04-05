@@ -12,7 +12,8 @@ import {
   findClosestTrack,
   findConnectingTrack,
   ConnectingTrackInfo,
-  geocodeAddress
+  geocodeAddress,
+  calculateDistance
 } from '@/lib/mapUtils';
 import { toast } from 'sonner';
 import { GameProvider, Passenger, Desire, GameEvent, GameMessage, useGame } from '@/contexts/GameContext';
@@ -22,7 +23,7 @@ import { saveRouteToHistory } from '@/lib/routeUtils';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Sheet, SheetContent, SheetTrigger } from './ui/sheet';
-import { Train, Menu, MapPin, Locate, Users, User, Globe, LogIn, History, Search, Star, HelpCircle } from 'lucide-react';
+import { Train, Menu, MapPin, Locate, Users, User, Globe, LogIn, History, Search, Star, HelpCircle, X } from 'lucide-react';
 import MapContainer from './MapContainer';
 import StyledLoadingScreen from './StyledLoadingScreen';
 import CityExplorer from './CityExplorer';
@@ -68,6 +69,12 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
   
   // Estados para el modo automático
   const [autoMode, setAutoMode] = useState<boolean>(false);
+  
+  // Estado para rastrear vías visitadas (evitar bucles)
+  const [visitedTracks, setVisitedTracks] = useState<Set<string>>(new Set());
+  
+  // Estado para el modo de exploración completa (recorrer todas las vías)
+  const [exploreAllMode, setExploreAllMode] = useState<boolean>(false);
   
   // Estados para dificultad
   const [difficulty, setDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
@@ -336,14 +343,71 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
     }
   }, [initializeGame, initialCoordinates]);
   
+
+  
   // Función para mover el tren automáticamente
   const moveTrainAuto = useCallback(() => {
+    // Si no hay vía seleccionada o la vía está vacía
     if (!selectedTrack || selectedTrack.path.length === 0) {
-      // Si no hay vía seleccionada, buscar la más cercana
+      // Si estamos en modo exploración completa, buscar una vía no visitada
+      if (exploreAllMode) {
+        // Buscar vías no visitadas
+        const unvisitedTracks = tracks.filter(track => !visitedTracks.has(track.id));
+        
+        if (unvisitedTracks.length > 0) {
+          // Seleccionar la vía no visitada más cercana
+          let closestUnvisitedTrack = null;
+          let minDistance = Infinity;
+          
+          unvisitedTracks.forEach(track => {
+            // Calcular distancia al inicio de la vía
+            const startDistance = calculateDistance(
+              trainPosition,
+              track.path[0]
+            );
+            
+            if (startDistance < minDistance) {
+              minDistance = startDistance;
+              closestUnvisitedTrack = track;
+            }
+          });
+          
+          if (closestUnvisitedTrack) {
+            // Marcar la vía como visitada
+            const newVisitedTracks = new Set(visitedTracks);
+            newVisitedTracks.add(closestUnvisitedTrack.id);
+            setVisitedTracks(newVisitedTracks);
+            
+            // Seleccionar la nueva vía
+            setSelectedTrack(closestUnvisitedTrack);
+            setCurrentTrackId(closestUnvisitedTrack.id);
+            setIsReversed(false);
+            setCurrentPathIndex(0);
+            setTrainPosition(closestUnvisitedTrack.path[0]);
+            setTrainMoving(true);
+            
+            toast.success(`Explorando nueva vía: ${closestUnvisitedTrack.id}`);
+            return;
+          }
+        }
+        
+        // Si no hay más vías sin visitar, mostrar mensaje de éxito
+        toast.success('¡Has explorado todas las vías del mapa!');
+        setExploreAllMode(false);
+        setAutoMode(false);
+        return;
+      }
+      
+      // Modo automático normal: buscar la vía más cercana
       const closestTrackId = findClosestTrack(trainPosition, tracks);
       if (closestTrackId) {
         const nextTrack = tracks.find(t => t.id === closestTrackId);
         if (nextTrack) {
+          // Marcar la vía como visitada
+          const newVisitedTracks = new Set(visitedTracks);
+          newVisitedTracks.add(nextTrack.id);
+          setVisitedTracks(newVisitedTracks);
+          
           setSelectedTrack(nextTrack);
           setCurrentTrackId(nextTrack.id);
           setIsReversed(false);
@@ -363,6 +427,13 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
     const isAtStart = isReversed && currentPathIndex <= 0;
     
     if (isAtEnd || isAtStart) {
+      // Marcar la vía actual como visitada
+      if (!visitedTracks.has(selectedTrack.id)) {
+        const newVisitedTracks = new Set(visitedTracks);
+        newVisitedTracks.add(selectedTrack.id);
+        setVisitedTracks(newVisitedTracks);
+      }
+      
       // Buscar una vía conectada
       const connectingInfo = findConnectingTrack(selectedTrack, tracks, isAtEnd);
       
@@ -370,6 +441,75 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
         // Encontramos una vía conectada
         const nextTrack = tracks.find(t => t.id === connectingInfo.trackId);
         if (nextTrack) {
+          // En modo exploración completa, priorizar vías no visitadas
+          if (exploreAllMode && visitedTracks.has(nextTrack.id)) {
+            // Buscar otras vías no visitadas cercanas
+            const unvisitedTracks = tracks.filter(track => !visitedTracks.has(track.id));
+            
+            if (unvisitedTracks.length > 0) {
+              // Buscar la mejor vía no visitada considerando estaciones, pasajeros y distancia
+              let bestTrack = null;
+              let bestScore = -Infinity;
+              
+              unvisitedTracks.forEach(track => {
+                // Calcular distancia al inicio de la vía
+                const startDistance = calculateDistance(
+                  trainPosition,
+                  track.path[0]
+                );
+                
+                // Calcular puntuación de la vía (prioridad menos penalización por distancia)
+                const priority = evaluateTrackPriority(track);
+                const distancePenalty = Math.min(startDistance * 10, 50); // Penalizar distancias largas, máximo 50 puntos
+                const score = priority - distancePenalty;
+                
+                if (score > bestScore) {
+                  bestScore = score;
+                  bestTrack = track;
+                }
+              });
+              
+              // Si todas las vías tienen una puntuación muy baja, usar la más cercana
+              if (bestScore < -30) {
+                let closestTrack = null;
+                let minDistance = Infinity;
+                
+                unvisitedTracks.forEach(track => {
+                  const startDistance = calculateDistance(trainPosition, track.path[0]);
+                  if (startDistance < minDistance) {
+                    minDistance = startDistance;
+                    closestTrack = track;
+                  }
+                });
+                
+                bestTrack = closestTrack;
+              }
+              
+              if (bestTrack) {
+                // Marcar la vía como visitada
+                const newVisitedTracks = new Set(visitedTracks);
+                newVisitedTracks.add(bestTrack.id);
+                setVisitedTracks(newVisitedTracks);
+                
+                // Seleccionar la nueva vía
+                setSelectedTrack(bestTrack);
+                setCurrentTrackId(bestTrack.id);
+                setIsReversed(false);
+                setCurrentPathIndex(0);
+                setTrainPosition(bestTrack.path[0]);
+                
+                toast.success(`Explorando nueva vía: ${bestTrack.id}`);
+                return;
+              }
+            }
+          }
+          
+          // Si no estamos en modo exploración o no hay vías no visitadas, seguir con la vía conectada
+          // Marcar la vía como visitada
+          const newVisitedTracks = new Set(visitedTracks);
+          newVisitedTracks.add(nextTrack.id);
+          setVisitedTracks(newVisitedTracks);
+          
           // Actualizar la vía seleccionada
           setSelectedTrack(nextTrack);
           setCurrentTrackId(nextTrack.id);
@@ -384,10 +524,84 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
         }
       } else {
         // Si no hay conexión, buscar la vía más cercana
+        // En modo exploración completa, priorizar vías no visitadas
+        if (exploreAllMode) {
+          const unvisitedTracks = tracks.filter(track => !visitedTracks.has(track.id));
+          
+          if (unvisitedTracks.length > 0) {
+            // Buscar la mejor vía no visitada considerando estaciones, pasajeros y distancia
+            let bestTrack = null;
+            let bestScore = -Infinity;
+            
+            unvisitedTracks.forEach(track => {
+              // Calcular distancia al inicio de la vía
+              const startDistance = calculateDistance(
+                trainPosition,
+                track.path[0]
+              );
+              
+              // Calcular puntuación de la vía (prioridad menos penalización por distancia)
+              const priority = evaluateTrackPriority(track);
+              const distancePenalty = Math.min(startDistance * 10, 50); // Penalizar distancias largas, máximo 50 puntos
+              const score = priority - distancePenalty;
+              
+              if (score > bestScore) {
+                bestScore = score;
+                bestTrack = track;
+              }
+            });
+            
+            // Si todas las vías tienen una puntuación muy baja, usar la más cercana
+            if (bestScore < -30) {
+              let closestTrack = null;
+              let minDistance = Infinity;
+              
+              unvisitedTracks.forEach(track => {
+                const startDistance = calculateDistance(trainPosition, track.path[0]);
+                if (startDistance < minDistance) {
+                  minDistance = startDistance;
+                  closestTrack = track;
+                }
+              });
+              
+              bestTrack = closestTrack;
+            }
+            
+            if (bestTrack) {
+              // Marcar la vía como visitada
+              const newVisitedTracks = new Set(visitedTracks);
+              newVisitedTracks.add(bestTrack.id);
+              setVisitedTracks(newVisitedTracks);
+              
+              // Seleccionar la nueva vía
+              setSelectedTrack(bestTrack);
+              setCurrentTrackId(bestTrack.id);
+              setIsReversed(false);
+              setCurrentPathIndex(0);
+              setTrainPosition(bestTrack.path[0]);
+              
+              toast.success(`Explorando nueva vía: ${bestTrack.id}`);
+              return;
+            }
+          }
+          
+          // Si no hay más vías sin visitar, mostrar mensaje de éxito
+          toast.success('¡Has explorado todas las vías del mapa!');
+          setExploreAllMode(false);
+          setAutoMode(false);
+          return;
+        }
+        
+        // Modo automático normal: buscar la vía más cercana que no sea la actual
         const closestTrackId = findClosestTrack(trainPosition, tracks);
         if (closestTrackId && closestTrackId !== selectedTrack.id) {
           const nextTrack = tracks.find(t => t.id === closestTrackId);
           if (nextTrack) {
+            // Marcar la vía como visitada
+            const newVisitedTracks = new Set(visitedTracks);
+            newVisitedTracks.add(nextTrack.id);
+            setVisitedTracks(newVisitedTracks);
+            
             setSelectedTrack(nextTrack);
             setCurrentTrackId(nextTrack.id);
             setIsReversed(false);
@@ -397,8 +611,22 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
             return;
           }
         } else {
-          toast.info("No se encontraron más vías cercanas");
-          setAutoMode(false);
+          // Si no hay más vías cercanas, cambiar de dirección y esperar 5 segundos
+          toast.info("Final de vía detectado. Cambiando dirección en 5 segundos...");
+          
+          // Programar el cambio de dirección después de 5 segundos
+          setTimeout(() => {
+            // Invertir la dirección del tren
+            setIsReversed(!isReversed);
+            
+            // Establecer el índice de inicio según la nueva dirección
+            const newIndex = isReversed ? selectedTrack.path.length - 1 : 0;
+            setCurrentPathIndex(newIndex);
+            setTrainPosition(selectedTrack.path[newIndex]);
+            
+            toast.success("Dirección cambiada. Continuando en sentido " + (isReversed ? "inverso" : "normal"));
+          }, 5000);
+          
           return;
         }
       }
@@ -408,7 +636,7 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
       setCurrentPathIndex(nextIndex);
       setTrainPosition(selectedTrack.path[nextIndex]);
     }
-  }, [selectedTrack, trainPosition, tracks, currentPathIndex, isReversed]);
+  }, [selectedTrack, trainPosition, tracks, currentPathIndex, isReversed, visitedTracks, exploreAllMode]);
   
   // Función para alternar el modo automático del tren
   const toggleAutoMode = useCallback(() => {
@@ -419,6 +647,11 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
     
     const newAutoMode = !autoMode;
     setAutoMode(newAutoMode);
+    
+    // Si desactivamos el modo automático, también desactivamos el modo de exploración completa
+    if (!newAutoMode) {
+      setExploreAllMode(false);
+    }
     
     if (newAutoMode) {
       // Si activamos el modo automático, iniciamos el movimiento
@@ -435,6 +668,34 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
       toast.info('Piloto automático desactivado');
     }
   }, [autoMode, selectedTrack, trainMoving]);
+  
+  // Función para activar/desactivar el modo de exploración completa
+  const toggleExploreAllMode = useCallback(() => {
+    // Solo se puede activar si el modo automático está activo
+    if (!autoMode) {
+      toast.error('Activa primero el piloto automático');
+      return;
+    }
+    
+    const newExploreAllMode = !exploreAllMode;
+    setExploreAllMode(newExploreAllMode);
+    
+    // Reiniciar el registro de vías visitadas al activar el modo
+    if (newExploreAllMode) {
+      // Marcar la vía actual como visitada si existe
+      const newVisitedTracks = new Set<string>();
+      if (selectedTrack) {
+        newVisitedTracks.add(selectedTrack.id);
+      }
+      setVisitedTracks(newVisitedTracks);
+      
+      toast.success('Modo exploración completa activado. El tren recorrerá todas las vías del mapa.');
+    } else {
+      toast.info('Modo exploración completa desactivado');
+    }
+  }, [autoMode, exploreAllMode, selectedTrack]);
+
+
 
   // Manejo de pasajeros
   const handlePassengerPickup = useCallback((passenger: Passenger) => {
@@ -458,18 +719,22 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
         // Si no hay notificación visible, mostrar una nueva
         setPickupNotification({ visible: true, count: 1 });
         
-        // Programar para ocultar la notificación después de 3 segundos
+        // Programar para ocultar la notificación después de un tiempo basado en la velocidad
+        // A mayor velocidad, menos tiempo se muestra la notificación para evitar acumulación
+        const hideDelay = trainSpeed > 80 ? 1500 : 2500;
         setTimeout(() => {
           setPickupNotification({ visible: false, count: 0 });
-        }, 3000);
+        }, hideDelay);
       }
       
       return newPickedUp;
     });
     
-    // Mostrar notificación toast
-    toast.success(`Pasajero recogido en ${passenger.origin.name}`);
-  }, [trainCapacity]);
+    // Mostrar notificación toast solo a velocidades bajas o medias para evitar spam
+    if (trainSpeed < 70) {
+      toast.success(`Pasajero recogido en ${passenger.origin.name}`);
+    }
+  }, [trainCapacity, trainSpeed]);
   
   const handlePassengerDelivery = useCallback((passenger: Passenger) => {
     // Eliminar pasajero de los recogidos
@@ -494,8 +759,10 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
     setMoney(prev => prev + baseReward);
     setPoints(prev => prev + basePoints + bonusPoints);
     
-    // Mostrar notificación toast
-    toast.success(`Pasajero entregado en ${passenger.destination.name}. +$${baseReward}, +${basePoints + bonusPoints} puntos${bonusText}`);
+    // Mostrar notificación toast solo a velocidades bajas o medias para evitar spam
+    if (trainSpeed < 70) {
+      toast.success(`Pasajero entregado en ${passenger.destination.name}. +$${baseReward}, +${basePoints + bonusPoints} puntos${bonusText}`);
+    }
     
     // Acumular pasajeros para notificaciones agrupadas
     // Si ya hay una notificación visible, aumentar el contador
@@ -505,10 +772,12 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
       // Si no hay notificación visible, mostrar una nueva
       setDropoffNotification({ visible: true, count: 1 });
       
-      // Programar para ocultar la notificación después de 3 segundos
+      // Programar para ocultar la notificación después de un tiempo basado en la velocidad
+      // A mayor velocidad, menos tiempo se muestra la notificación para evitar acumulación
+      const hideDelay = trainSpeed > 80 ? 1500 : 2500;
       setTimeout(() => {
         setDropoffNotification({ visible: false, count: 0 });
-      }, 3000);
+      }, hideDelay);
     }
     
     // Verificar si se ha alcanzado algún hito
@@ -521,13 +790,124 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
       
       toast.info('¡Hito alcanzado! Todas las estaciones pueden generar pasajeros nuevamente.');
     }
-  }, [points, money]);
+  }, [points, money, trainSpeed]);
   
   const handlePassengerExpired = useCallback((passenger: Passenger) => {
     setActivePassengers(prev => prev.filter(p => p.id !== passenger.id));
     setPoints(prev => Math.max(0, prev - 5)); // Restar 5 puntos, mínimo 0
     toast.error(`Pasajero perdido en ${passenger.origin.name}. -5 puntos`);
   }, []);
+  
+  // Función para evaluar la prioridad de una vía según el número de estaciones y pasajeros cercanos
+  const evaluateTrackPriority = useCallback((track: TrackSegment): number => {
+    if (!track || !track.path || track.path.length === 0) return 0;
+    
+    let priority = 0;
+    
+    // Contar estaciones cercanas a la vía
+    const stationsNearTrack = stations.filter(station => {
+      // Verificar si alguna parte de la vía está cerca de la estación
+      return track.path.some(point => {
+        const distance = calculateDistance(point, station.position);
+        return distance < 0.2; // 200 metros
+      });
+    });
+    
+    // Añadir puntos por cada estación cercana
+    priority += stationsNearTrack.length * 10;
+    
+    // Añadir puntos por cada pasajero esperando en estas estaciones
+    const passengersAtStations = activePassengers.filter(passenger => 
+      stationsNearTrack.some(station => station.id === passenger.origin.id)
+    );
+    priority += passengersAtStations.length * 20;
+    
+    // Penalizar vías ya visitadas si estamos en modo exploración
+    if (exploreAllMode && visitedTracks.has(track.id)) {
+      priority -= 50;
+    }
+    
+    return priority;
+  }, [stations, activePassengers, visitedTracks, exploreAllMode]);
+  
+  // Función para verificar si el tren está cerca de una estación y manejar pasajeros automáticamente
+  const checkPassengersAtStations = useCallback(() => {
+    if (!trainPosition) return;
+    
+    // Distancia máxima para considerar que el tren está cerca de una estación (en km)
+    // Ajustamos el radio de detección según la velocidad del tren
+    const baseRadius = 0.08; // Radio base en km
+    const speedFactor = trainSpeed / 100; // Factor de velocidad (0.5 para 50km/h, 1.0 para 100km/h)
+    const detectionRadius = autoMode ? 
+      Math.min(0.20, baseRadius + (speedFactor * 0.15)) : // Máximo 200m en modo auto
+      baseRadius;
+    
+    // Optimización: Crear un mapa de estaciones cercanas para evitar cálculos repetidos
+    const nearbyStations = new Map<string, number>(); // Map<stationId, distance>
+    
+    // Procesar recogidas y entregas en lotes para mayor eficiencia
+    const passengersToPickup: Passenger[] = [];
+    const passengersToDeliver: Passenger[] = [];
+    
+    // Verificar pasajeros para recoger (que estén esperando en estaciones cercanas)
+    if (pickedUpPassengers.length < trainCapacity) {
+      activePassengers.forEach(passenger => {
+        const stationId = passenger.origin.id;
+        let distance;
+        
+        // Reutilizar distancia calculada si ya existe
+        if (nearbyStations.has(stationId)) {
+          distance = nearbyStations.get(stationId)!;
+        } else {
+          distance = calculateDistance(trainPosition, passenger.origin.position);
+          nearbyStations.set(stationId, distance);
+        }
+        
+        // Si el tren está lo suficientemente cerca y hay capacidad, añadir a la lista de recogida
+        if (distance <= detectionRadius) {
+          passengersToPickup.push(passenger);
+        }
+      });
+    }
+    
+    // Verificar pasajeros para dejar (que estén en el tren y su destino está cerca)
+    pickedUpPassengers.forEach(passenger => {
+      const stationId = passenger.destination.id;
+      let distance;
+      
+      // Reutilizar distancia calculada si ya existe
+      if (nearbyStations.has(stationId)) {
+        distance = nearbyStations.get(stationId)!;
+      } else {
+        distance = calculateDistance(trainPosition, passenger.destination.position);
+        nearbyStations.set(stationId, distance);
+      }
+      
+      // Si el tren está lo suficientemente cerca de la estación de destino, añadir a la lista de entrega
+      if (distance <= detectionRadius) {
+        passengersToDeliver.push(passenger);
+      }
+    });
+    
+    // Procesar las recogidas (limitadas por la capacidad disponible)
+    const availableCapacity = trainCapacity - pickedUpPassengers.length;
+    passengersToPickup.slice(0, availableCapacity).forEach(passenger => {
+      handlePassengerPickup(passenger);
+    });
+    
+    // Procesar las entregas
+    passengersToDeliver.forEach(passenger => {
+      handlePassengerDelivery(passenger);
+    });
+  }, [trainPosition, activePassengers, pickedUpPassengers, trainCapacity, autoMode, trainSpeed, handlePassengerPickup, handlePassengerDelivery]);
+
+  // Efecto para verificar la proximidad a estaciones cuando el tren se mueve
+  useEffect(() => {
+    if (trainPosition && (autoMode || trainSpeed >= 50)) {
+      // Verificar si hay pasajeros para recoger o dejar en estaciones cercanas
+      checkPassengersAtStations();
+    }
+  }, [trainPosition, autoMode, trainSpeed, checkPassengersAtStations]);
 
   // Manejar la búsqueda de direcciones
   const handleSearch = useCallback(async (coordinates: Coordinates) => {
@@ -587,7 +967,7 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
     setTrainSpeed(speed);
   }, []);
 
-  // Esta declaración se ha movido arriba
+
 
   // Manejar click en el botón de movimiento del tren
   const handleMoveTrainClick = useCallback(() => {
@@ -832,7 +1212,7 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
             <div className="px-1">
               <GameHeader 
                 speed={trainSpeed} 
-                onSpeedChange={handleSpeedChange} 
+                onSpeedChange={handleSpeedChange}
               />
             </div>
           </div>
@@ -876,10 +1256,10 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
             
             {/* Panel de control superpuesto (más alargado y mitad de altura) */}
             <div className="absolute bottom-8 left-0 right-0 flex justify-center items-center z-50 pointer-events-none">
-              <div className="bg-background/80 backdrop-blur-sm p-2 rounded-lg shadow-lg border border-primary/20 w-full max-w-[840px] mx-4 pointer-events-auto">
-                <div className="flex flex-row items-center gap-3 justify-between h-[70px]">
+              <div className="bg-background/85 backdrop-blur-md p-4 rounded-xl shadow-xl border border-primary/30 w-full max-w-[1080px] mx-4 pointer-events-auto">
+                <div className="flex flex-row items-center gap-6 justify-between h-[85px]">
                   {/* Sección 1: Información de pasajeros integrada con botón de asientos */}
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-4">
                     <div className="flex-shrink-0">
                       <PassengerInfo 
                         money={money}
@@ -892,68 +1272,108 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
                     {/* Botón compacto para mostrar modal de asientos */}
                     <button 
                       onClick={() => setSeatsModalVisible(true)}
-                      className="flex items-center gap-1 px-2 py-1 bg-blue-500 text-white text-sm rounded-md hover:bg-blue-600 transition-colors"
+                      className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white text-sm rounded-md hover:bg-blue-600 transition-colors shadow-md"
                       title="Ver asientos del tren"
                     >
-                      <Train size={16} />
-                      <span>{pickedUpPassengers.length}/{trainCapacity}</span>
+                      <Train size={18} className="mr-1" />
+                      <span className="font-medium">{pickedUpPassengers.length}/{trainCapacity}</span>
                     </button>
                   </div>
                   
                   {/* Separador vertical */}
-                  <div className="h-[60px] w-px bg-gray-200"></div>
+                  <div className="h-[65px] w-[2px] bg-gradient-to-b from-gray-200/30 via-gray-300/70 to-gray-200/30 rounded-full"></div>
                   
                   {/* Sección 2: Control de Tren */}
-                  <div className="flex-shrink-0 w-[200px] flex flex-col">
-                    <div className="flex justify-between items-center mb-1">
-                      <h3 className="text-xs font-semibold text-primary">Control de Tren</h3>
-                      <div className="text-xs text-muted-foreground">
+                  <div className="flex-shrink-0 w-[280px] flex flex-col">
+                    <div className="flex justify-between items-center mb-2">
+                      <h3 className="text-sm font-semibold text-primary">Control de Tren</h3>
+                      <div className="text-xs text-muted-foreground bg-background/70 px-2 py-1 rounded-md border border-border/50">
                         {selectedTrack ? `Vía: ${selectedTrack.id}` : 'Selecciona vía'}
                       </div>
                     </div>
-                    <div className="flex gap-2">
-                      <Button 
-                        onClick={handleMoveTrainClick}
-                        className="bg-primary hover:bg-primary/90 text-primary-foreground flex-1 text-sm py-1 h-8"
-                        size="sm"
-                        disabled={autoMode}
-                      >
-                        <Train className="h-3 w-3 mr-1" />
-                        Mover
-                      </Button>
-                      <Button 
-                        onClick={toggleAutoMode}
-                        className={`${autoMode ? 'bg-amber-500 hover:bg-amber-600' : 'bg-emerald-600 hover:bg-emerald-700'} text-white flex-1 text-sm py-1 h-8`}
-                        size="sm"
-                      >
-                        <Train className="h-3 w-3 mr-1" />
-                        {autoMode ? 'Detener' : 'Auto'}
-                      </Button>
+                    <div className="flex gap-2 flex-col">
+                      <div className="flex gap-2">
+                        <Button 
+                          onClick={handleMoveTrainClick}
+                          className="bg-primary hover:bg-primary/90 text-primary-foreground flex-1 text-sm py-1 h-9"
+                          size="sm"
+                          disabled={autoMode}
+                        >
+                          <Train className="h-4 w-4 mr-1" />
+                          Mover
+                        </Button>
+                        <Button 
+                          onClick={() => {
+                            // Solo cambiar la dirección sin mover el tren
+                            setIsReversed(!isReversed);
+                            toast.info(`Dirección cambiada: ${!isReversed ? 'marcha atrás' : 'adelante'}`);
+                          }}
+                          className={`${isReversed ? 'bg-amber-500 hover:bg-amber-600' : 'bg-blue-500 hover:bg-blue-600'} text-white flex-1 text-sm py-1 h-9`}
+                          size="sm"
+                          disabled={autoMode}
+                          title={isReversed ? "Dirección: Marcha atrás" : "Dirección: Adelante"}
+                        >
+                          {isReversed ? (
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1">
+                              <path d="M18 15h-6v4l-7-7 7-7v4h8a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2z"/>
+                            </svg>
+                          ) : (
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1">
+                              <path d="M6 15h6v4l7-7-7-7v4H4a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2z"/>
+                            </svg>
+                          )}
+                          {isReversed ? 'Reversa' : 'Avance'}
+                        </Button>
+                        <Button 
+                          onClick={toggleAutoMode}
+                          className={`${autoMode ? 'bg-amber-500 hover:bg-amber-600' : 'bg-emerald-600 hover:bg-emerald-700'} text-white flex-1 text-sm py-1 h-9`}
+                          size="sm"
+                        >
+                          <Train className="h-4 w-4 mr-1" />
+                          {autoMode ? 'Detener' : 'Auto'}
+                        </Button>
+                      </div>
+                      {autoMode && (
+                        <Button 
+                          onClick={toggleExploreAllMode}
+                          className={`${exploreAllMode ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-500 hover:bg-gray-600'} text-white w-full text-xs py-1 h-7 mt-1 rounded-md flex items-center justify-center`}
+                          size="sm"
+                        >
+                          <MapPin className="h-4 w-4 mr-1" />
+                          <span className="font-medium">
+                            {exploreAllMode ? 'Exploración Activa' : 'Explorar Todo el Mapa'}
+                          </span>
+                          {exploreAllMode && (
+                            <span className="ml-1 bg-green-500 rounded-full h-2 w-2 animate-pulse"></span>
+                          )}
+                        </Button>
+                      )}
                     </div>
                   </div>
                   
                   {/* Separador vertical */}
-                  <div className="h-[60px] w-px bg-gray-200"></div>
+                  <div className="h-[65px] w-[2px] bg-gradient-to-b from-gray-200/30 via-gray-300/70 to-gray-200/30 rounded-full"></div>
                   
                   {/* Sección 3: Controles de mapa y dificultad */}
-                  <div className="flex-shrink-0 w-[180px] flex flex-col gap-1">
+                  <div className="flex-shrink-0 w-[220px] flex flex-col gap-2">
                     <Button 
                       onClick={() => setMapStyle(mapStyle === 'street' ? 'satellite' : 'street')}
                       variant="outline"
                       size="sm"
-                      className="w-full h-8 text-xs"
+                      className="w-full h-9 text-sm flex items-center justify-center gap-2"
                     >
+                      <MapPin className="h-4 w-4" />
                       {mapStyle === 'street' ? 'Ver Satélite' : 'Ver Calles'}
                     </Button>
                     
-                    <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center justify-between text-sm bg-background/60 p-1.5 rounded-md">
                       <span className="font-medium text-primary">Dificultad:</span>
-                      <div className="flex gap-1">
+                      <div className="flex gap-1.5">
                         <Button 
                           onClick={() => setDifficulty('easy')}
                           variant={difficulty === 'easy' ? "default" : "outline"}
                           size="sm"
-                          className={`h-6 text-xs px-2 ${difficulty === 'easy' ? 'bg-green-600 hover:bg-green-700' : ''}`}
+                          className={`h-7 text-xs px-3 font-medium ${difficulty === 'easy' ? 'bg-green-600 hover:bg-green-700 shadow-md' : 'border-green-500/50'}`}
                         >
                           Fácil
                         </Button>
@@ -961,7 +1381,7 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
                           onClick={() => setDifficulty('medium')}
                           variant={difficulty === 'medium' ? "default" : "outline"}
                           size="sm"
-                          className={`h-6 text-xs px-2 ${difficulty === 'medium' ? 'bg-amber-600 hover:bg-amber-700' : ''}`}
+                          className={`h-7 text-xs px-3 font-medium ${difficulty === 'medium' ? 'bg-amber-600 hover:bg-amber-700 shadow-md' : 'border-amber-500/50'}`}
                         >
                           Medio
                         </Button>
@@ -969,7 +1389,7 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
                           onClick={() => setDifficulty('hard')}
                           variant={difficulty === 'hard' ? "default" : "outline"}
                           size="sm"
-                          className={`h-6 text-xs px-2 ${difficulty === 'hard' ? 'bg-red-600 hover:bg-red-700' : ''}`}
+                          className={`h-7 text-xs px-3 font-medium ${difficulty === 'hard' ? 'bg-red-600 hover:bg-red-700 shadow-md' : 'border-red-500/50'}`}
                         >
                           Difícil
                         </Button>
@@ -978,25 +1398,36 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
                   </div>
                   
                   {/* Separador vertical */}
-                  <div className="h-[60px] w-px bg-gray-200"></div>
+                  <div className="h-[65px] w-[2px] bg-gradient-to-b from-gray-200/30 via-gray-300/70 to-gray-200/30 rounded-full"></div>
                   
                   {/* Sección 4: Lista de pasajeros */}
-                  <div className="flex-grow max-w-[150px]">
-                    <div className="flex justify-between items-center mb-1">
-                      <h3 className="text-xs font-semibold text-primary">Pasajeros</h3>
+                  <div className="flex-grow max-w-[180px]">
+                    <div className="flex justify-between items-center mb-2 bg-background/60 p-1.5 rounded-md">
+                      <h3 className="text-sm font-semibold text-primary">Pasajeros</h3>
                       <Button
                         onClick={() => setShowPassengersList(!showPassengersList)}
-                        variant="ghost"
+                        variant="outline"
                         size="sm"
-                        className="h-6 text-xs px-2"
+                        className="h-7 text-xs px-2 border-blue-500/50"
                       >
-                        <Users className="h-3 w-3 mr-1" />
-                        {showPassengersList ? '-' : '+'}
+                        <Users className="h-4 w-4 mr-1" />
+                        {showPassengersList ? 'Ocultar' : 'Mostrar'}
                       </Button>
                     </div>
                     
                     {showPassengersList && (
-                      <div className="absolute bottom-full left-0 right-0 mb-2 bg-background/90 backdrop-blur-sm p-2 rounded-lg shadow-lg border border-primary/20 max-h-[200px] overflow-y-auto">
+                      <div className="absolute bottom-full left-0 right-0 mb-2 bg-background/95 backdrop-blur-md p-3 rounded-xl shadow-xl border border-primary/30 max-h-[250px] overflow-y-auto z-50">
+                        <div className="flex justify-between items-center mb-2 border-b border-border pb-2">
+                          <h3 className="text-base font-semibold text-primary">Lista de Pasajeros</h3>
+                          <Button
+                            onClick={() => setShowPassengersList(false)}
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0 rounded-full"
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
                         <PassengerList 
                           activePassengers={activePassengers}
                           pickedUpPassengers={pickedUpPassengers}
@@ -1124,6 +1555,7 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
         type="pickup"
         count={pickupNotification.count}
         isVisible={pickupNotification.visible}
+        position="pickup"
         onAnimationComplete={() => setPickupNotification({ visible: false, count: 0 })}
       />
       
@@ -1131,6 +1563,7 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
         type="dropoff"
         count={dropoffNotification.count}
         isVisible={dropoffNotification.visible}
+        position="dropoff"
         onAnimationComplete={() => setDropoffNotification({ visible: false, count: 0 })}
       />
     </div>
