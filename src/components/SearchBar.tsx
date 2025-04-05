@@ -20,7 +20,13 @@ const SearchBar: React.FC<SearchBarProps> = ({ onSearch, isLoading }) => {
     if (!searchValue.trim()) return;
     
     try {
-      const coordinates = await geocodeAddress(searchValue);
+      // Add España/Spain if not already included to focus on Spanish cities
+      let searchQuery = searchValue;
+      if (!searchQuery.toLowerCase().includes('españa') && !searchQuery.toLowerCase().includes('spain')) {
+        searchQuery = `${searchQuery}, España`;
+      }
+      
+      const coordinates = await geocodeAddress(searchQuery);
       await onSearch(coordinates);
       toast.success(`Ubicación encontrada: ${searchValue}`);
     } catch (error) {
@@ -36,7 +42,7 @@ const SearchBar: React.FC<SearchBarProps> = ({ onSearch, isLoading }) => {
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             type="text"
-            placeholder="Buscar ubicación (ej. Barcelona, Sagrada Familia)"
+            placeholder="Buscar ciudad en España (ej. Barcelona, Madrid, Valencia)"
             value={searchValue}
             onChange={(e) => setSearchValue(e.target.value)}
             className="pl-8"
