@@ -1,13 +1,16 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Button } from './ui/button';
 import { Train } from 'lucide-react';
 import SimpleTrainAnimation from './SimpleTrainAnimation';
+import HomeSearchBar from './HomeSearchBar';
+import { Coordinates } from '@/lib/mapUtils';
 
 interface MainMenuProps {
-  onStartGame: () => void;
+  onStartGame: (coordinates?: Coordinates) => void;
 }
 
 const MainMenu: React.FC<MainMenuProps> = ({ onStartGame }) => {
+  const [showSearchBar, setShowSearchBar] = useState(false);
   return (
     <div className="relative h-screen w-screen overflow-hidden">
       {/* Fondo con gradiente que simula un paisaje español */}
@@ -25,12 +28,31 @@ const MainMenu: React.FC<MainMenuProps> = ({ onStartGame }) => {
         <div className="w-[350px] h-[175px] bg-[#5D9E31] rounded-[50%] absolute right-[100px] -top-[85px]"></div>
       </div>
       
+      {/* Atribución superior */}
+      <div className="absolute top-4 left-0 right-0 flex justify-center">
+        <div className="bg-[#FF5722]/80 text-white px-4 py-1 rounded-full shadow-md backdrop-blur-sm">
+          <p className="text-sm font-medium">Made By Carlos Freire in Málaga ❤️</p>
+        </div>
+      </div>
+      
       {/* Vías de tren en la parte inferior */}
-      <div className="absolute bottom-0 left-0 right-0 h-[40px] bg-[#8B4513] flex items-center justify-center">
-        <div className="w-full h-[10px] bg-[#A0522D] flex">
-          {Array(30).fill(0).map((_, i) => (
-            <div key={i} className="h-full w-[30px] border-l-2 border-r-2 border-[#CD853F]"></div>
-          ))}
+      <div className="absolute bottom-0 left-0 right-0 h-[40px] bg-[#333333] flex items-center justify-center">
+        {/* Base de las vías */}
+        <div className="w-full h-[20px] bg-[#222222] flex items-center">
+          {/* Traviesas */}
+          <div className="w-full h-[6px] flex">
+            {Array(60).fill(0).map((_, i) => (
+              <div key={i} className="h-full w-[20px] mx-[10px] bg-[#444444]"></div>
+            ))}
+          </div>
+        </div>
+        
+        {/* Rieles */}
+        <div className="absolute bottom-[20px] left-0 right-0 h-[4px] flex justify-center">
+          <div className="w-[95%] flex justify-between">
+            <div className="h-full w-[10px] bg-[#111111]"></div>
+            <div className="h-full w-[10px] bg-[#111111]"></div>
+          </div>
         </div>
       </div>
       
@@ -50,13 +72,24 @@ const MainMenu: React.FC<MainMenuProps> = ({ onStartGame }) => {
 
           
           <Button 
-            onClick={onStartGame}
+            onClick={() => setShowSearchBar(true)}
             className="bg-[#FF5722] hover:bg-[#E64A19] text-white text-2xl py-8 px-16 rounded-full shadow-xl transform transition hover:scale-105 z-10 border-4 border-white"
             size="lg"
           >
             <Train className="h-8 w-8 mr-3" />
             JUGAR
           </Button>
+          
+          {/* Banner de búsqueda */}
+          {showSearchBar && (
+            <div className="mt-8 w-full max-w-3xl animate-fadeIn">
+              <HomeSearchBar 
+                onLocationSelect={(coordinates) => {
+                  onStartGame(coordinates);
+                }}
+              />
+            </div>
+          )}
         </div>
       </div>
     </div>

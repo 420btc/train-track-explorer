@@ -22,11 +22,16 @@ import UserProfile from './UserProfile';
 import TrackLegend from './TrackLegend';
 import PassengerInfo from './PassengerInfo';
 import ConsoleBanner from './ConsoleBanner';
+import StyledLoadingScreen from './StyledLoadingScreen';
 import PassengerList from './PassengerList';
 import { Passenger } from './PassengerSystem';
 
-const TrainGame: React.FC = () => {
-  const [mapCenter, setMapCenter] = useState<Coordinates>(DEFAULT_COORDINATES);
+interface TrainGameProps {
+  initialCoordinates?: Coordinates;
+}
+
+const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COORDINATES }) => {
+  const [mapCenter, setMapCenter] = useState<Coordinates>(initialCoordinates);
   const [mapZoom, setMapZoom] = useState(DEFAULT_ZOOM);
   const [tracks, setTracks] = useState<TrackSegment[]>([]);
   const [stations, setStations] = useState<any[]>([]);
@@ -46,6 +51,7 @@ const TrainGame: React.FC = () => {
   const [activePassengers, setActivePassengers] = useState<Passenger[]>([]);
   const [pickedUpPassengers, setPickedUpPassengers] = useState<Passenger[]>([]);
   const [showPassengersList, setShowPassengersList] = useState<boolean>(false);
+  const [autoMode, setAutoMode] = useState<boolean>(false);
 
   const initializeGame = useCallback(async (center: Coordinates) => {
     setIsLoading(true);
@@ -78,9 +84,35 @@ const TrainGame: React.FC = () => {
 
   // Inicializar el juego al cargar
   useEffect(() => {
-    initializeGame(DEFAULT_COORDINATES);
-  }, [initializeGame]);
+    initializeGame(initialCoordinates);
+  }, [initializeGame, initialCoordinates]);
   
+  // Función para alternar el modo automático del tren
+  const toggleAutoMode = useCallback(() => {
+    if (!selectedTrack && !autoMode) {
+      toast.error('Selecciona una vía primero');
+      return;
+    }
+    
+    const newAutoMode = !autoMode;
+    setAutoMode(newAutoMode);
+    
+    if (newAutoMode) {
+      // Si activamos el modo automático y el tren no está en movimiento, iniciamos el movimiento
+      if (!trainMoving && selectedTrack) {
+        // Iniciar con la primera coordenada de la vía
+        setTrainMoving(true);
+        setCurrentPathIndex(0);
+        setCurrentTrackId(selectedTrack.id);
+        setTrainPosition(selectedTrack.path[0]);
+        setIsReversed(false);
+      }
+      toast.success('Piloto automático activado');
+    } else {
+      toast.info('Piloto automático desactivado');
+    }
+  }, [autoMode, selectedTrack, trainMoving]);
+
   // Manejo de pasajeros
   const handlePassengerPickup = useCallback((passenger: Passenger) => {
     setActivePassengers(prev => prev.filter(p => p.id !== passenger.id));
@@ -235,12 +267,41 @@ const TrainGame: React.FC = () => {
         }
       }
       
+      // Si no hay conexión, pero estamos en modo automático, buscar la vía más cercana
+      if (autoMode) {
+        const closestTrackId = findClosestTrack(trainPosition, tracks);
+        if (closestTrackId && closestTrackId !== selectedTrack.id) {
+          // Encontrar el objeto de vía completo a partir del ID
+          const nextTrack = tracks.find(t => t.id === closestTrackId);
+          if (nextTrack) {
+            // Actualizar la vía seleccionada
+            setSelectedTrack(nextTrack);
+            setCurrentTrackId(nextTrack.id);
+            setIsReversed(false);
+            
+            // Establecer el índice inicial en la nueva vía
+            setCurrentPathIndex(0);
+            setTrainPosition(nextTrack.path[0]);
+            
+            toast.success(`Modo automático: Cambiando a vía ${nextTrack.id}`);
+            return;
+          }
+        }
+      }
+      
       // Si no hay conexión, mostrar mensaje y detener el tren
       if (isAtEnd) {
         toast.info("El tren ha llegado al final de la vía y no hay conexión disponible");
       } else {
         toast.info("El tren ha llegado al inicio de la vía y no hay conexión disponible");
       }
+      
+      // Si estamos en modo automático, desactivarlo
+      if (autoMode) {
+        setAutoMode(false);
+        toast.info("Piloto automático desactivado: No se encontraron más vías");
+      }
+      
       return;
     }
 
@@ -347,10 +408,7 @@ const TrainGame: React.FC = () => {
       
       <div className="relative flex-grow">
         {isLoading ? (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-xl text-primary animate-pulse absolute top-1/4">Cargando mapa con calles reales...</div>
-            <ConsoleBanner isVisible={isLoading} />
-          </div>
+          <StyledLoadingScreen isVisible={isLoading} />
         ) : (
           <>
             <div className="absolute inset-0 z-0">
@@ -406,14 +464,25 @@ const TrainGame: React.FC = () => {
                         {selectedTrack ? `Vía: ${selectedTrack.id}` : 'Selecciona vía'}
                       </div>
                     </div>
-                    <Button 
-                      onClick={handleMoveTrainClick}
-                      className="bg-primary hover:bg-primary/90 text-primary-foreground w-full text-sm py-1 h-8"
-                      size="sm"
-                    >
-                      <Train className="h-3 w-3 mr-1" />
-                      Mover Tren
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button 
+                        onClick={handleMoveTrainClick}
+                        className="bg-primary hover:bg-primary/90 text-primary-foreground flex-1 text-sm py-1 h-8"
+                        size="sm"
+                        disabled={autoMode}
+                      >
+                        <Train className="h-3 w-3 mr-1" />
+                        Mover
+                      </Button>
+                      <Button 
+                        onClick={toggleAutoMode}
+                        className={`${autoMode ? 'bg-amber-500 hover:bg-amber-600' : 'bg-emerald-600 hover:bg-emerald-700'} text-white flex-1 text-sm py-1 h-8`}
+                        size="sm"
+                      >
+                        <Train className="h-3 w-3 mr-1" />
+                        {autoMode ? 'Detener' : 'Auto'}
+                      </Button>
+                    </div>
                   </div>
                   
                   {/* Separador vertical */}

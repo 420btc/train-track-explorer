@@ -186,28 +186,45 @@ const PassengerSystem: React.FC<PassengerSystemProps> = ({
 
   // Handle passenger pickup, delivery, and expiration
   useEffect(() => {
+    // Referencia a los valores actuales para evitar dependencias circulares
+    const trainPos = trainPosition;
+    const isMoving = isTrainMoving;
+    const pickupFn = onPassengerPickup;
+    const deliveryFn = onPassengerDelivery;
+    const expiredFn = onPassengerExpired;
+    const settings = {...currentSettings};
+    
+    // Usamos una variable de referencia para evitar actualizaciones en cascada
+    const passengerInteractionRef = useRef(false);
+    
     const checkPassengerInteractions = () => {
+      // Si ya estamos procesando interacciones, salir para evitar bucles
+      if (passengerInteractionRef.current) return;
+      passengerInteractionRef.current = true;
+      
       const currentTime = Date.now();
+      let hasChanges = false;
       
       setPassengers(prevPassengers => {
-        return prevPassengers.filter(passenger => {
+        const updatedPassengers = prevPassengers.filter(passenger => {
           // Skip already picked up passengers
           if (passenger.isPickedUp) {
             // Check if train is at passenger's destination
             const destinationPos = passenger.destination.position;
             const distance = calculateDistance(
-              trainPosition.lat, 
-              trainPosition.lng, 
+              trainPos.lat, 
+              trainPos.lng, 
               destinationPos.lat, 
               destinationPos.lng
             );
             
             // Radio de entrega es un poco más grande que el de recogida para facilitar la entrega
-            const deliveryRadius = currentSettings.pickupRadius * 1.2;
+            const deliveryRadius = settings.pickupRadius * 1.2;
             
             if (distance <= deliveryRadius) {
               // Passenger delivered
-              onPassengerDelivery(passenger);
+              deliveryFn(passenger);
+              hasChanges = true;
               return false; // Remove from array
             }
             
@@ -215,43 +232,55 @@ const PassengerSystem: React.FC<PassengerSystemProps> = ({
           }
           
           // Check if passenger has expired (tiempo según dificultad)
-          if (currentTime - passenger.createdAt > currentSettings.expirationTime) {
-            onPassengerExpired(passenger);
+          if (currentTime - passenger.createdAt > settings.expirationTime) {
+            expiredFn(passenger);
+            hasChanges = true;
             return false; // Remove from array
           }
           
           // Check if train is close enough to pick up passenger
           const distance = calculateDistance(
-            trainPosition.lat, 
-            trainPosition.lng, 
+            trainPos.lat, 
+            trainPos.lng, 
             passenger.position.lat, 
             passenger.position.lng
           );
           
-          if (distance <= currentSettings.pickupRadius) {
-            onPassengerPickup(passenger);
+          if (distance <= settings.pickupRadius) {
+            pickupFn(passenger);
             passenger.isPickedUp = true;
+            hasChanges = true;
           }
           
           return true; // Keep in array
         });
+        
+        // Liberar el bloqueo después de procesar
+        setTimeout(() => {
+          passengerInteractionRef.current = false;
+        }, 100);
+        
+        // Solo actualizar si hay cambios
+        return hasChanges ? updatedPassengers : prevPassengers;
       });
     };
     
     // Check interactions every 500ms for real-time updates
     const interactionInterval = setInterval(() => {
-      if (!isTrainMoving) {
+      if (!isMoving && !passengerInteractionRef.current) {
         checkPassengerInteractions();
       }
     }, 500);
     
     // También verificar inmediatamente cuando cambia la posición del tren
-    if (!isTrainMoving) {
-      checkPassengerInteractions();
+    // pero solo si no estamos ya procesando interacciones
+    if (!isMoving && !passengerInteractionRef.current) {
+      // Retrasar ligeramente para evitar colisiones con otros efectos
+      setTimeout(checkPassengerInteractions, 50);
     }
     
     return () => clearInterval(interactionInterval);
-  }, [trainPosition, isTrainMoving, onPassengerPickup, onPassengerDelivery, onPassengerExpired, difficulty, currentSettings]);
+  }, []);  // Eliminamos todas las dependencias para evitar el bucle
 
   // Render passengers on canvas
   useEffect(() => {
