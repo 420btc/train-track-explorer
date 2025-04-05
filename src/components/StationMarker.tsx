@@ -3,6 +3,7 @@ import React from 'react';
 import { Marker, Tooltip } from 'react-leaflet';
 import L from 'leaflet';
 import { Coordinates } from '@/lib/mapUtils';
+import { Passenger } from './PassengerSystem';
 
 interface Station {
   id: string;
@@ -10,15 +11,17 @@ interface Station {
   position: Coordinates;
   trackId: string;
   color?: string;
+  canGenerate?: boolean;
 }
 
 interface StationMarkerProps {
   position: [number, number]; // Leaflet usa [lat, lng] para las posiciones
   station: Station;
   onClick: (station: Station) => void;
+  waitingPassengers?: Passenger[];
 }
 
-const StationMarker: React.FC<StationMarkerProps> = ({ position, station, onClick }) => {
+const StationMarker: React.FC<StationMarkerProps> = ({ position, station, onClick, waitingPassengers = [] }) => {
   // Create a custom icon for stations
   const stationIcon = L.divIcon({
     html: `
@@ -29,6 +32,26 @@ const StationMarker: React.FC<StationMarkerProps> = ({ position, station, onClic
     iconAnchor: [6, 6],
   });
 
+  // Calcular tiempo restante para el pasajero más próximo a expirar
+  const calculateTimeLeft = () => {
+    if (waitingPassengers.length === 0) return null;
+    
+    const currentTime = Date.now();
+    let minTimeLeft = Infinity;
+    
+    waitingPassengers.forEach(passenger => {
+      const expirationTime = passenger.createdAt + 90000; // 90 segundos
+      const timeLeft = Math.max(0, expirationTime - currentTime);
+      if (timeLeft < minTimeLeft) {
+        minTimeLeft = timeLeft;
+      }
+    });
+    
+    return minTimeLeft === Infinity ? null : Math.ceil(minTimeLeft / 1000);
+  };
+  
+  const timeLeft = calculateTimeLeft();
+  
   return (
     <Marker 
       position={position} 
@@ -37,8 +60,28 @@ const StationMarker: React.FC<StationMarkerProps> = ({ position, station, onClic
         click: () => onClick(station)
       }}
     >
-      <Tooltip direction="top" offset={[0, -10]} opacity={1}>
-        {station.name}
+      <Tooltip direction="top" offset={[0, -10]} opacity={1} permanent={waitingPassengers.length > 0}>
+        <div className="text-xs">
+          <div className="font-medium">{station.name}</div>
+          {waitingPassengers.length > 0 && (
+            <div className="mt-1 text-[10px]">
+              <div className="flex justify-between items-center">
+                <span className="text-green-600 font-medium">{waitingPassengers.length} pasajero{waitingPassengers.length !== 1 ? 's' : ''}</span>
+                {timeLeft !== null && (
+                  <span className="text-orange-500 font-medium">{timeLeft}s</span>
+                )}
+              </div>
+              {waitingPassengers.map(passenger => (
+                <div key={passenger.id} className="text-[9px] text-gray-500 truncate">
+                  → {passenger.destination.name}
+                </div>
+              )).slice(0, 3)}
+              {waitingPassengers.length > 3 && (
+                <div className="text-[9px] text-gray-500">+ {waitingPassengers.length - 3} más...</div>
+              )}
+            </div>
+          )}
+        </div>
       </Tooltip>
     </Marker>
   );

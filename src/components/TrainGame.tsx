@@ -14,10 +14,13 @@ import {
 } from '@/lib/mapUtils';
 import { toast } from 'sonner';
 import { Button } from './ui/button';
-import { Train, Menu, MapPin, Locate } from 'lucide-react';
+import { Train, Menu, MapPin, Locate, Users } from 'lucide-react';
 import { Sheet, SheetContent, SheetTrigger } from './ui/sheet';
 import UserProfile from './UserProfile';
 import TrackLegend from './TrackLegend';
+import PassengerInfo from './PassengerInfo';
+import PassengerList from './PassengerList';
+import { Passenger } from './PassengerSystem';
 
 const TrainGame: React.FC = () => {
   const [mapCenter, setMapCenter] = useState<Coordinates>(DEFAULT_COORDINATES);
@@ -32,6 +35,13 @@ const TrainGame: React.FC = () => {
   const [currentPathIndex, setCurrentPathIndex] = useState<number>(0);
   const [selectedTrack, setSelectedTrack] = useState<TrackSegment | null>(null);
   const [mapStyle, setMapStyle] = useState<'street' | 'satellite'>('street');
+  
+  // Sistema de pasajeros
+  const [money, setMoney] = useState<number>(1000);
+  const [points, setPoints] = useState<number>(0);
+  const [activePassengers, setActivePassengers] = useState<Passenger[]>([]);
+  const [pickedUpPassengers, setPickedUpPassengers] = useState<Passenger[]>([]);
+  const [showPassengersList, setShowPassengersList] = useState<boolean>(false);
 
   const initializeGame = useCallback(async (center: Coordinates) => {
     setIsLoading(true);
@@ -66,6 +76,55 @@ const TrainGame: React.FC = () => {
   useEffect(() => {
     initializeGame(DEFAULT_COORDINATES);
   }, [initializeGame]);
+  
+  // Manejo de pasajeros
+  const handlePassengerPickup = useCallback((passenger: Passenger) => {
+    setActivePassengers(prev => prev.filter(p => p.id !== passenger.id));
+    setPickedUpPassengers(prev => [...prev, passenger]);
+    toast.success(`Pasajero recogido en ${passenger.origin.name}`);
+  }, []);
+  
+  const handlePassengerDelivery = useCallback((passenger: Passenger) => {
+    setPickedUpPassengers(prev => prev.filter(p => p.id !== passenger.id));
+    
+    // Calcular recompensa
+    const currentTime = Date.now();
+    const timeTaken = currentTime - passenger.createdAt;
+    const baseReward = 50; // $50 base
+    const basePoints = 10; // 10 puntos base
+    
+    let bonusPoints = 0;
+    let bonusText = '';
+    
+    // Bono por entrega rápida (menos de 60 segundos)
+    if (timeTaken < 60000) {
+      bonusPoints = 20;
+      bonusText = ' +20 puntos por entrega rápida!';
+    }
+    
+    // Actualizar dinero y puntos
+    setMoney(prev => prev + baseReward);
+    setPoints(prev => prev + basePoints + bonusPoints);
+    
+    toast.success(`Pasajero entregado en ${passenger.destination.name}. +$${baseReward}, +${basePoints + bonusPoints} puntos${bonusText}`);
+    
+    // Verificar si se ha alcanzado algún hito
+    if (points + basePoints + bonusPoints >= 1000 || money + baseReward >= 5000) {
+      // Reiniciar canGenerate para todas las estaciones
+      setStations(prev => prev.map(station => ({
+        ...station,
+        canGenerate: true
+      })));
+      
+      toast.info('¡Hito alcanzado! Todas las estaciones pueden generar pasajeros nuevamente.');
+    }
+  }, [points, money]);
+  
+  const handlePassengerExpired = useCallback((passenger: Passenger) => {
+    setActivePassengers(prev => prev.filter(p => p.id !== passenger.id));
+    setPoints(prev => Math.max(0, prev - 5)); // Restar 5 puntos, mínimo 0
+    toast.error(`Pasajero perdido en ${passenger.origin.name}. -5 puntos`);
+  }, []);
 
   // Manejar la búsqueda de direcciones
   const handleSearch = useCallback(async (coordinates: Coordinates) => {
@@ -257,6 +316,13 @@ const TrainGame: React.FC = () => {
                 speed={trainSpeed}
                 onTrackSelect={handleTrackSelect}
                 mapStyle={mapStyle}
+                isTrainMoving={trainMoving}
+                activePassengers={activePassengers}
+                pickedUpPassengers={pickedUpPassengers}
+                onPassengerPickup={handlePassengerPickup}
+                onPassengerDelivery={handlePassengerDelivery}
+                onPassengerExpired={handlePassengerExpired}
+                setActivePassengers={setActivePassengers}
               />
             </div>
             
@@ -267,8 +333,18 @@ const TrainGame: React.FC = () => {
             
             {/* Panel de control superpuesto (20% más pequeño) */}
             <div className="absolute bottom-8 left-0 right-0 flex justify-center items-center z-50 pointer-events-none">
-              <div className="bg-background/80 backdrop-blur-sm p-2 rounded-lg shadow-lg border border-primary/20 w-full max-w-[240px] mx-4 pointer-events-auto">
+              <div className="bg-background/80 backdrop-blur-sm p-2 rounded-lg shadow-lg border border-primary/20 w-full max-w-[320px] mx-4 pointer-events-auto">
                 <div className="flex flex-col items-center gap-2">
+                  {/* Información de pasajeros integrada */}
+                  <PassengerInfo 
+                    money={money}
+                    points={points}
+                    activePassengers={activePassengers}
+                    pickedUpPassengers={pickedUpPassengers}
+                  />
+                  
+                  <div className="h-px w-full bg-gray-200 my-1"></div>
+                  
                   <div className="flex w-full justify-between items-center mb-1">
                     <h3 className="text-xs font-semibold text-primary">Control de Tren</h3>
                     <Button 
@@ -290,6 +366,31 @@ const TrainGame: React.FC = () => {
                   </Button>
                   <div className="text-xs text-muted-foreground">
                     {selectedTrack ? `Vía actual: ${selectedTrack.id}` : 'Selecciona una vía'}
+                  </div>
+                  
+                  <div className="h-px w-full bg-gray-200 my-1"></div>
+                  
+                  {/* Lista de pasajeros */}
+                  <div className="w-full">
+                    <div className="flex justify-between items-center">
+                      <h3 className="text-xs font-semibold text-primary">Pasajeros</h3>
+                      <Button
+                        onClick={() => setShowPassengersList(!showPassengersList)}
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 text-xs px-2"
+                      >
+                        <Users className="h-3 w-3 mr-1" />
+                        {showPassengersList ? 'Ocultar' : 'Mostrar'}
+                      </Button>
+                    </div>
+                    
+                    {showPassengersList && (
+                      <PassengerList 
+                        activePassengers={activePassengers}
+                        pickedUpPassengers={pickedUpPassengers}
+                      />
+                    )}
                   </div>
                 </div>
               </div>
