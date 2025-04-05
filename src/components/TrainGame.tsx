@@ -16,7 +16,7 @@ import {
 } from '@/lib/mapUtils';
 import { toast } from 'sonner';
 import { Button } from './ui/button';
-import { Train, Menu, MapPin, Locate, Users } from 'lucide-react';
+import { Train, Menu, MapPin, Locate, Users, History, LogIn, User, Globe } from 'lucide-react';
 import { Sheet, SheetContent, SheetTrigger } from './ui/sheet';
 import UserProfile from './UserProfile';
 import TrackLegend from './TrackLegend';
@@ -25,6 +25,10 @@ import ConsoleBanner from './ConsoleBanner';
 import StyledLoadingScreen from './StyledLoadingScreen';
 import PassengerList from './PassengerList';
 import { Passenger } from './PassengerSystem';
+import CityExplorer from './CityExplorer';
+import MyRoutes from './MyRoutes';
+import AuthDialog from './AuthDialog';
+import { getCurrentUser, saveRouteForCurrentUser, saveToRouteHistory } from '@/lib/authUtils';
 
 interface TrainGameProps {
   initialCoordinates?: Coordinates;
@@ -54,6 +58,12 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
   const [autoMode, setAutoMode] = useState<boolean>(false);
   // Estado para controlar la dirección del tren en la vía actual
   const [isReversed, setIsReversed] = useState<boolean>(false);
+  
+  // Estados para los nuevos diálogos
+  const [showCityExplorer, setShowCityExplorer] = useState<boolean>(false);
+  const [showMyRoutes, setShowMyRoutes] = useState<boolean>(false);
+  const [showAuthDialog, setShowAuthDialog] = useState<boolean>(false);
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
 
   const initializeGame = useCallback(async (center: Coordinates) => {
     setIsLoading(true);
@@ -87,6 +97,23 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
   // Inicializar el juego al cargar
   useEffect(() => {
     initializeGame(initialCoordinates);
+    
+    // Verificar si hay un usuario logueado
+    const user = getCurrentUser();
+    setIsLoggedIn(!!user);
+    
+    // Guardar esta ubicación en el historial
+    const locationName = `Ubicación ${new Date().toLocaleDateString('es-ES')}`;
+    if (user) {
+      saveRouteForCurrentUser(locationName, initialCoordinates);
+    } else {
+      saveToRouteHistory({
+        id: Date.now().toString(),
+        name: locationName,
+        coordinates: initialCoordinates,
+        timestamp: Date.now()
+      });
+    }
   }, [initializeGame, initialCoordinates]);
   
   // Función para mover el tren automáticamente
@@ -433,31 +460,42 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
             </SheetTrigger>
             <SheetContent side="left" className="w-[300px] sm:w-[400px]">
               <div className="py-4">
-                <h2 className="text-lg font-medium">Train Maps</h2>
+                <h2 className="text-lg font-medium">Metro Español</h2>
                 <p className="text-sm text-muted-foreground">Explorador de redes ferroviarias</p>
                 
                 <div className="mt-6 space-y-4">
                   <Button 
                     className="w-full justify-start" 
                     variant="ghost"
-                    onClick={() => {
-                      toast.info("Buscando ciudades cercanas...");
-                      // Aquí se implementaría la funcionalidad real
-                    }}
+                    onClick={() => setShowCityExplorer(true)}
                   >
-                    <MapPin className="mr-2 h-4 w-4" />
+                    <Globe className="mr-2 h-4 w-4" />
                     Explorar ciudades
                   </Button>
                   <Button 
                     className="w-full justify-start" 
                     variant="ghost"
-                    onClick={() => {
-                      toast.info("Cargando rutas guardadas...");
-                      // Aquí se implementaría la funcionalidad real
-                    }}
+                    onClick={() => setShowMyRoutes(true)}
                   >
-                    <Train className="mr-2 h-4 w-4" />
+                    <History className="mr-2 h-4 w-4" />
                     Mis rutas
+                  </Button>
+                  <Button 
+                    className="w-full justify-start" 
+                    variant="ghost"
+                    onClick={() => setShowAuthDialog(true)}
+                  >
+                    {isLoggedIn ? (
+                      <>
+                        <User className="mr-2 h-4 w-4" />
+                        Mi perfil
+                      </>
+                    ) : (
+                      <>
+                        <LogIn className="mr-2 h-4 w-4" />
+                        Iniciar sesión
+                      </>
+                    )}
                   </Button>
                 </div>
               </div>
@@ -661,6 +699,49 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
           </>
         )}
       </div>
+      
+      {/* Diálogos modales */}
+      <CityExplorer 
+        open={showCityExplorer} 
+        onOpenChange={setShowCityExplorer} 
+        onCitySelect={(coordinates) => {
+          initializeGame(coordinates);
+          toast.success("¡Cargando nueva ciudad!");
+          
+          // Guardar en historial
+          const locationName = `Ciudad ${new Date().toLocaleDateString('es-ES')}`;
+          if (getCurrentUser()) {
+            saveRouteForCurrentUser(locationName, coordinates);
+          } else {
+            saveToRouteHistory({
+              id: Date.now().toString(),
+              name: locationName,
+              coordinates,
+              timestamp: Date.now()
+            });
+          }
+        }}
+      />
+      
+      <MyRoutes 
+        open={showMyRoutes} 
+        onOpenChange={setShowMyRoutes} 
+        onRouteSelect={(coordinates) => {
+          initializeGame(coordinates);
+          toast.success("¡Cargando ruta guardada!");
+        }}
+      />
+      
+      <AuthDialog 
+        open={showAuthDialog} 
+        onOpenChange={(open) => {
+          setShowAuthDialog(open);
+          // Actualizar estado de login cuando se cierra el diálogo
+          if (!open) {
+            setIsLoggedIn(!!getCurrentUser());
+          }
+        }}
+      />
     </div>
   );
 };
