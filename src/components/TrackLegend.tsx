@@ -34,23 +34,23 @@ const TrackLegend: React.FC<TrackLegendProps> = ({ tracks }) => {
   }));
 
   return (
-    <div className="bg-white bg-opacity-90 p-4 rounded-md shadow-md max-w-[280px] border border-gray-200">
+    <div className="bg-white bg-opacity-90 p-3 rounded-md shadow-md max-w-[260px] border border-gray-200">
       <div className="flex items-center mb-2">
         <Train className="h-4 w-4 mr-2 text-primary" />
-        <h3 className="text-sm font-bold border-b pb-1 w-full">Red de Metro Español</h3>
+        <h3 className="text-xs font-bold border-b pb-1 w-full">Red de Metro Español</h3>
       </div>
       
-      <ul className="space-y-2 mb-3">
+      <ul className="space-y-1 mb-2">
         {tracksWithNames.map((track) => (
-          <li key={track.id} className="text-xs">
+          <li key={track.id} className="text-[10px]">
             <div className="flex items-center">
               <div 
-                className="w-4 h-4 rounded-full mr-2 flex-shrink-0" 
+                className="w-3 h-3 rounded-full mr-1.5 flex-shrink-0" 
                 style={{ backgroundColor: track.color }}
               />
               <span className="font-semibold">{track.lineName}</span>
             </div>
-            <div className="ml-6 text-gray-600 text-[10px] mt-0.5">
+            <div className="ml-4.5 text-gray-600 text-[9px] mt-0.5">
               {track.destination}
             </div>
           </li>

@@ -16,7 +16,7 @@ export interface TrackSegment {
 }
 
 // Constants
-export const DEFAULT_COORDINATES: Coordinates = { lat: 40.416775, lng: -3.70379 }; // Madrid
+export const DEFAULT_COORDINATES: Coordinates = { lat: 36.7213, lng: -4.4214 }; // Málaga
 export const DEFAULT_ZOOM = 15;
 const MAX_TRACK_LENGTH = 2500; // Max track length in meters
 const MIN_TRACK_LENGTH = 500; // Min track length in meters

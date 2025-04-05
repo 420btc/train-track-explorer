@@ -1,9 +1,24 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import TrainGame from '@/components/TrainGame';
+import MainMenu from '@/components/MainMenu';
 
 const Index = () => {
-  return <TrainGame />;
+  const [showGame, setShowGame] = useState(false);
+  
+  const handleStartGame = () => {
+    setShowGame(true);
+  };
+  
+  return (
+    <>
+      {!showGame ? (
+        <MainMenu onStartGame={handleStartGame} />
+      ) : (
+        <TrainGame />
+      )}
+    </>
+  );
 };
 
 export default Index;

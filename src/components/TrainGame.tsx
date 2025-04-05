@@ -260,32 +260,32 @@ const TrainGame: React.FC = () => {
               />
             </div>
             
-            {/* Leyenda de las vías como componente independiente */}
-            <div className="absolute left-4 bottom-36 z-50">
+            {/* Leyenda de las vías como componente independiente (ahora en esquina izquierda inferior) */}
+            <div className="absolute left-4 bottom-8 z-50">
               <TrackLegend tracks={tracks} />
             </div>
             
-            {/* Panel de control superpuesto (50% más pequeño) */}
+            {/* Panel de control superpuesto (20% más pequeño) */}
             <div className="absolute bottom-8 left-0 right-0 flex justify-center items-center z-50 pointer-events-none">
-              <div className="bg-background/80 backdrop-blur-sm p-3 rounded-lg shadow-lg border border-primary/20 w-full max-w-xs mx-4 pointer-events-auto">
+              <div className="bg-background/80 backdrop-blur-sm p-2 rounded-lg shadow-lg border border-primary/20 w-full max-w-[240px] mx-4 pointer-events-auto">
                 <div className="flex flex-col items-center gap-2">
                   <div className="flex w-full justify-between items-center mb-1">
-                    <h3 className="text-sm font-semibold text-primary">Control de Tren</h3>
+                    <h3 className="text-xs font-semibold text-primary">Control de Tren</h3>
                     <Button 
                       onClick={() => setMapStyle(mapStyle === 'street' ? 'satellite' : 'street')}
                       variant="outline"
                       size="sm"
-                      className="h-7 text-xs"
+                      className="h-6 text-xs px-2"
                     >
                       {mapStyle === 'street' ? 'Ver Satélite' : 'Ver Calles'}
                     </Button>
                   </div>
                   <Button 
                     onClick={handleMoveTrainClick}
-                    className="bg-primary hover:bg-primary/90 text-primary-foreground w-full"
-                    size="default"
+                    className="bg-primary hover:bg-primary/90 text-primary-foreground w-full text-sm py-1 h-8"
+                    size="sm"
                   >
-                    <Train className="h-4 w-4 mr-2" />
+                    <Train className="h-3 w-3 mr-1" />
                     Mover Tren
                   </Button>
                   <div className="text-xs text-muted-foreground">

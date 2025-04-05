@@ -96,7 +96,8 @@ const MapContainer: React.FC<MapContainerProps> = ({
             positions={track.path.map(p => [p.lat, p.lng])}
             pathOptions={{ 
               color: track.color,
-              weight: track.id === currentTrackId ? 6 : track.weight,
+              // Usar un ancho consistente de 4 para todas las vías, excepto la seleccionada que será 6
+              weight: track.id === currentTrackId ? 6 : 4,
               opacity: track.id === currentTrackId ? 1 : 0.8
             }}
             eventHandlers={{

@@ -1,0 +1,122 @@
+@keyframes moveRight {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100vw);
+  }
+}
+
+.simple-train {
+  position: absolute;
+  bottom: 10px;
+  left: 0;
+  animation: moveRight 15s linear infinite;
+  z-index: 10;
+}
+
+.train-body {
+  width: 60px;
+  height: 25px;
+  background-color: #3D85C6;
+  border-radius: 5px 5px 0 0;
+  position: relative;
+}
+
+.train-cabin {
+  width: 15px;
+  height: 10px;
+  background-color: #333;
+  position: absolute;
+  top: -10px;
+  left: 10px;
+  border-radius: 3px 3px 0 0;
+}
+
+.train-window {
+  width: 10px;
+  height: 10px;
+  background-color: #CFE2F3;
+  border: 1px solid #2C5E91;
+  border-radius: 50%;
+  position: absolute;
+  top: 5px;
+  left: 40px;
+}
+
+.train-base {
+  width: 60px;
+  height: 5px;
+  background-color: #FF9900;
+}
+
+.train-wheels {
+  display: flex;
+  justify-content: space-around;
+}
+
+.wheel {
+  width: 10px;
+  height: 10px;
+  background-color: #333;
+  border-radius: 50%;
+  border: 1px solid #666;
+}
+
+.wagon {
+  width: 50px;
+  height: 20px;
+  background-color: #6AA84F;
+  border-radius: 3px 3px 0 0;
+  margin-left: 5px;
+  position: relative;
+}
+
+.wagon-window {
+  width: 8px;
+  height: 8px;
+  background-color: #D9EAD3;
+  border: 1px solid #274E13;
+  position: absolute;
+  top: 5px;
+}
+
+.wagon-window-1 {
+  left: 10px;
+}
+
+.wagon-window-2 {
+  right: 10px;
+}
+
+.wagon-base {
+  width: 50px;
+  height: 5px;
+  background-color: #FF9900;
+}
+
+.train-container {
+  display: flex;
+  align-items: flex-end;
+  position: relative;
+}
+
+/* Resplandor amarillo */
+@keyframes pulse {
+  0% { opacity: 0.4; }
+  50% { opacity: 0.7; }
+  100% { opacity: 0.4; }
+}
+
+.train-glow {
+  position: absolute;
+  width: 120%;
+  height: 150%;
+  background-color: rgba(255, 215, 0, 0.4);
+  filter: blur(10px);
+  border-radius: 50%;
+  z-index: 5;
+  top: -25%;
+  left: -10%;
+  animation: pulse 2s infinite ease-in-out;
+}
