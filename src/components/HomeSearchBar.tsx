@@ -22,14 +22,30 @@ const HomeSearchBar: React.FC<HomeSearchBarProps> = ({ onLocationSelect }) => {
     }
     
     setIsSearching(true);
+    toast.info('Buscando ubicación...');
     
     try {
+      // Buscar la dirección y obtener coordenadas
       const coordinates = await geocodeAddress(searchQuery);
+      
+      // Verificar si son las coordenadas por defecto (Málaga)
+      const isMalaga = (
+        Math.abs(coordinates.lat - DEFAULT_COORDINATES.lat) < 0.001 && 
+        Math.abs(coordinates.lng - DEFAULT_COORDINATES.lng) < 0.001
+      );
+      
+      if (isMalaga) {
+        toast.info(`No se encontró "${searchQuery}". Usando Málaga como ubicación predeterminada.`);
+      } else {
+        toast.success(`Ubicación encontrada: ${searchQuery}`);
+      }
+      
+      // Generar el mapa con las coordenadas
       onLocationSelect(coordinates);
-      toast.success(`Ubicación encontrada: ${searchQuery}`);
     } catch (error) {
-      console.error('Error searching location:', error);
-      toast.error('No se pudo encontrar la ubicación. Intenta con otra búsqueda.');
+      console.error('Error en la búsqueda:', error);
+      toast.error('Error al buscar la ubicación');
+      onLocationSelect(DEFAULT_COORDINATES);
     } finally {
       setIsSearching(false);
     }

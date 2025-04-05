@@ -26,38 +26,50 @@ const STATIONS_PER_TRACK = 3; // Reducido para tener más estaciones distribuida
 const STATIONS_PER_CONNECTION = 2; // Número fijo de estaciones por conexión
 const MIN_STATION_DISTANCE = 0.2; // Reducido para permitir estaciones más cercanas
 
-// Geocoding helper function using direct fetch to Nominatim API
+// Token de MapBox para geocodificación
+const MAPBOX_TOKEN = 'pk.eyJ1IjoiNDIwYnRjIiwiYSI6ImNtOTN3ejBhdzByNjgycHF6dnVmeHl2ZTUifQ.Utq_q5wN6DHwpkn6rcpZdw';
+
+// Geocoding helper function using MapBox API
 export const geocodeAddress = async (address: string): Promise<Coordinates> => {
+  // Si no hay dirección, usar coordenadas predeterminadas
+  if (!address || address.trim() === '') {
+    return DEFAULT_COORDINATES;
+  }
+  
   try {
-    // Usar directamente la API de Nominatim
+    // Usar la API de MapBox para geocodificación
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 segundos de timeout
+    
     const response = await fetch(
-      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&addressdetails=1&countrycodes=es&limit=1`,
-      {
-        headers: {
-          'User-Agent': 'urban-rail-simulator',
-          'Referer': 'https://lovableproject.com/'
-        }
+      `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(address)}.json?access_token=${MAPBOX_TOKEN}&limit=1`,
+      { 
+        method: 'GET',
+        signal: controller.signal
       }
     );
     
+    clearTimeout(timeoutId);
+    
     if (!response.ok) {
-      throw new Error(`Nominatim API responded with status: ${response.status}`);
+      throw new Error(`MapBox API error: ${response.status}`);
     }
     
-    const searchResults = await response.json();
-
-    if (!searchResults || searchResults.length === 0) {
-      throw new Error('No results found');
+    const data = await response.json();
+    
+    if (data.features && data.features.length > 0) {
+      // MapBox devuelve las coordenadas como [longitude, latitude]
+      const [lng, lat] = data.features[0].center;
+      console.log(`Ubicación encontrada: ${data.features[0].place_name}`);
+      
+      return { lat, lng };
     }
-
-    const result = searchResults[0];
-    return {
-      lat: parseFloat(result.lat),
-      lng: parseFloat(result.lon)
-    };
+    
+    console.log(`No se encontró la ubicación: ${address}`);
+    return DEFAULT_COORDINATES;
   } catch (error) {
-    console.error('Geocoding error:', error);
-    throw new Error('Failed to geocode address');
+    console.error('Error en geocodificación:', error);
+    return DEFAULT_COORDINATES;
   }
 };
 
