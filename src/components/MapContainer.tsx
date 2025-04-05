@@ -38,19 +38,28 @@ interface MapContainerProps {
   tracks: TrackSegment[];
   stations: Station[];
   trainPosition: Coordinates;
-  currentTrackId: string;
-  onTrainMove: (position: Coordinates, trackId: string) => void;
-  speed: number;
-  onTrackSelect: (trackId: string) => void;
+  currentTrackId?: string;
+  onTrainMove?: (position: Coordinates, trackId: string) => void;
+  speed?: number;
+  onTrackSelect?: (trackId: string) => void;
+  onTrackClick?: (track: TrackSegment) => void;
   mapStyle?: 'street' | 'satellite';
-  isTrainMoving: boolean;
-  activePassengers: Passenger[];
-  pickedUpPassengers: Passenger[];
-  onPassengerPickup: (passenger: Passenger) => void;
-  onPassengerDelivery: (passenger: Passenger) => void;
-  onPassengerExpired: (passenger: Passenger) => void;
-  setActivePassengers: Dispatch<SetStateAction<Passenger[]>>;
-  difficulty: 'easy' | 'medium' | 'hard';
+  isTrainMoving?: boolean;
+  activePassengers?: Passenger[];
+  pickedUpPassengers?: Passenger[];
+  onPassengerPickup?: (passenger: Passenger) => void;
+  onPassengerDelivery?: (passenger: Passenger) => void;
+  onPassengerExpired?: (passenger: Passenger) => void;
+  setActivePassengers?: Dispatch<SetStateAction<Passenger[]>>;
+  difficulty?: 'easy' | 'medium' | 'hard';
+  currentLevel?: {
+    id: number;
+    name: string;
+    passengerFrequency: number;
+    maxPassengers: number;
+    trainCapacity?: number;
+  };
+  trainCapacity?: number;
 }
 
 const MapContainer: React.FC<MapContainerProps> = ({ 
@@ -63,15 +72,18 @@ const MapContainer: React.FC<MapContainerProps> = ({
   onTrainMove,
   speed,
   onTrackSelect,
+  onTrackClick,
   mapStyle = 'street',
-  isTrainMoving,
-  activePassengers,
-  pickedUpPassengers,
+  isTrainMoving = false,
+  activePassengers = [],
+  pickedUpPassengers = [],
   onPassengerPickup,
   onPassengerDelivery,
   onPassengerExpired,
   setActivePassengers,
-  difficulty
+  difficulty = 'medium',
+  currentLevel,
+  trainCapacity = 4
 }) => {
   const [selectedStation, setSelectedStation] = useState<Station | null>(null);
   const animationFrameRef = useRef(null);
@@ -84,7 +96,17 @@ const MapContainer: React.FC<MapContainerProps> = ({
 
   // Handle track click
   const handleTrackClick = (trackId: string) => {
-    onTrackSelect(trackId);
+    if (onTrackSelect) {
+      onTrackSelect(trackId);
+    }
+    
+    // Si se proporciona onTrackClick, buscar el track y llamar a la función
+    if (onTrackClick) {
+      const track = tracks.find(t => t.id === trackId);
+      if (track) {
+        onTrackClick(track);
+      }
+    }
   };
 
   return (
@@ -163,6 +185,8 @@ const MapContainer: React.FC<MapContainerProps> = ({
           activePassengers={activePassengers}
           setActivePassengers={setActivePassengers}
           difficulty={difficulty}
+          currentLevel={currentLevel}
+          trainCapacity={trainCapacity}
         />
       </LeafletMap>
       
@@ -197,6 +221,13 @@ interface PassengerSystemControllerProps {
   activePassengers: Passenger[];
   setActivePassengers: Dispatch<SetStateAction<Passenger[]>>;
   difficulty: 'easy' | 'medium' | 'hard';
+  currentLevel?: {
+    id: number;
+    name: string;
+    passengerFrequency: number;
+    maxPassengers: number;
+  };
+  trainCapacity?: number;
 }
 
 const PassengerSystemController: React.FC<PassengerSystemControllerProps> = ({
@@ -209,7 +240,9 @@ const PassengerSystemController: React.FC<PassengerSystemControllerProps> = ({
   pickedUpPassengers,
   activePassengers,
   setActivePassengers,
-  difficulty
+  difficulty,
+  currentLevel,
+  trainCapacity = 4
 }) => {
   const map = useMap();
   const canvasRef = useRef<HTMLCanvasElement>(null);
