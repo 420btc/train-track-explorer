@@ -1,3 +1,6 @@
+
+@import 'leaflet/dist/leaflet.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -97,5 +100,13 @@
 
   body {
     @apply bg-background text-foreground;
+    margin: 0;
+    padding: 0;
   }
+}
+
+/* Leaflet specific overrides */
+.leaflet-container {
+  width: 100%;
+  height: 100vh;
 }
