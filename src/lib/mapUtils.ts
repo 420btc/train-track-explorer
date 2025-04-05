@@ -1,8 +1,8 @@
 
 import * as turf from '@turf/turf';
 import * as polyline from '@mapbox/polyline';
-// Fix the import to use the correct export from nominatim-client
-import nominatimClient from 'nominatim-client';
+// Importar correctamente nominatim-client
+import { createNominatimClient } from 'nominatim-client';
 
 // Type definitions
 export interface Coordinates {
@@ -26,14 +26,21 @@ const MIN_TRACK_LENGTH = 200; // Min track length in meters
 const URBAN_AREA_RADIUS = 1500; // Max radius for urban rail network in meters
 const MAX_STATIONS = 10; // Maximum number of stations
 
+// Crear el cliente de Nominatim
+const nominatimClient = createNominatimClient({
+  useragent: 'urban-rail-simulator', // Nombre de la aplicación
+  referer: 'https://lovableproject.com/' // URL de referencia
+});
+
 // Geocoding helper function
 export const geocodeAddress = async (address: string): Promise<Coordinates> => {
   try {
-    // Use the correct way to access nominatim-client
+    // Usar correctamente el cliente de Nominatim
     const searchResults = await nominatimClient.search({
       q: address,
       addressdetails: 1,
-      limit: 1
+      limit: 1,
+      countrycodes: 'es' // Limitar a resultados en España
     });
 
     if (searchResults.length === 0) {

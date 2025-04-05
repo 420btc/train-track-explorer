@@ -22,7 +22,9 @@ const SearchBar: React.FC<SearchBarProps> = ({ onSearch, isLoading }) => {
     try {
       // Add España/Spain if not already included to focus on Spanish cities
       let searchQuery = searchValue;
-      if (!searchQuery.toLowerCase().includes('españa') && !searchQuery.toLowerCase().includes('spain')) {
+      if (!searchQuery.toLowerCase().includes('españa') && 
+          !searchQuery.toLowerCase().includes('spain') &&
+          !searchQuery.toLowerCase().includes('espana')) {
         searchQuery = `${searchQuery}, España`;
       }
       
@@ -31,7 +33,7 @@ const SearchBar: React.FC<SearchBarProps> = ({ onSearch, isLoading }) => {
       toast.success(`Ubicación encontrada: ${searchValue}`);
     } catch (error) {
       console.error('Error searching location:', error);
-      toast.error('No se pudo encontrar la ubicación');
+      toast.error('No se pudo encontrar la ubicación. Intenta con otra dirección o especificar más (ej: Calle Mayor, Madrid)');
     }
   };
 
@@ -42,7 +44,7 @@ const SearchBar: React.FC<SearchBarProps> = ({ onSearch, isLoading }) => {
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             type="text"
-            placeholder="Buscar ciudad en España (ej. Barcelona, Madrid, Valencia)"
+            placeholder="Buscar ciudad o calle en España (ej. Málaga, Gran Vía Madrid)"
             value={searchValue}
             onChange={(e) => setSearchValue(e.target.value)}
             className="pl-8"
