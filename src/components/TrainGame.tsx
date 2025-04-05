@@ -52,6 +52,8 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
   const [pickedUpPassengers, setPickedUpPassengers] = useState<Passenger[]>([]);
   const [showPassengersList, setShowPassengersList] = useState<boolean>(false);
   const [autoMode, setAutoMode] = useState<boolean>(false);
+  // Estado para controlar la dirección del tren en la vía actual
+  const [isReversed, setIsReversed] = useState<boolean>(false);
 
   const initializeGame = useCallback(async (center: Coordinates) => {
     setIsLoading(true);
@@ -87,6 +89,80 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
     initializeGame(initialCoordinates);
   }, [initializeGame, initialCoordinates]);
   
+  // Función para mover el tren automáticamente
+  const moveTrainAuto = useCallback(() => {
+    if (!selectedTrack || selectedTrack.path.length === 0) {
+      // Si no hay vía seleccionada, buscar la más cercana
+      const closestTrackId = findClosestTrack(trainPosition, tracks);
+      if (closestTrackId) {
+        const nextTrack = tracks.find(t => t.id === closestTrackId);
+        if (nextTrack) {
+          setSelectedTrack(nextTrack);
+          setCurrentTrackId(nextTrack.id);
+          setIsReversed(false);
+          setCurrentPathIndex(0);
+          setTrainPosition(nextTrack.path[0]);
+          setTrainMoving(true);
+          return;
+        }
+      }
+      toast.error('No se encontró ninguna vía cercana');
+      setAutoMode(false);
+      return;
+    }
+    
+    // Verificar si estamos al final o al inicio de la vía
+    const isAtEnd = !isReversed && currentPathIndex >= selectedTrack.path.length - 1;
+    const isAtStart = isReversed && currentPathIndex <= 0;
+    
+    if (isAtEnd || isAtStart) {
+      // Buscar una vía conectada
+      const connectingInfo = findConnectingTrack(selectedTrack, tracks, isAtEnd);
+      
+      if (connectingInfo) {
+        // Encontramos una vía conectada
+        const nextTrack = tracks.find(t => t.id === connectingInfo.trackId);
+        if (nextTrack) {
+          // Actualizar la vía seleccionada
+          setSelectedTrack(nextTrack);
+          setCurrentTrackId(nextTrack.id);
+          setIsReversed(connectingInfo.reversed);
+          
+          // Establecer el índice inicial en la nueva vía
+          setCurrentPathIndex(connectingInfo.startIndex);
+          setTrainPosition(nextTrack.path[connectingInfo.startIndex]);
+          
+          toast.success(`Conectando con vía ${nextTrack.id}`);
+          return;
+        }
+      } else {
+        // Si no hay conexión, buscar la vía más cercana
+        const closestTrackId = findClosestTrack(trainPosition, tracks);
+        if (closestTrackId && closestTrackId !== selectedTrack.id) {
+          const nextTrack = tracks.find(t => t.id === closestTrackId);
+          if (nextTrack) {
+            setSelectedTrack(nextTrack);
+            setCurrentTrackId(nextTrack.id);
+            setIsReversed(false);
+            setCurrentPathIndex(0);
+            setTrainPosition(nextTrack.path[0]);
+            toast.success(`Modo automático: Cambiando a vía ${nextTrack.id}`);
+            return;
+          }
+        } else {
+          toast.info("No se encontraron más vías cercanas");
+          setAutoMode(false);
+          return;
+        }
+      }
+    } else {
+      // Avanzar a la siguiente posición en la vía actual
+      const nextIndex = isReversed ? currentPathIndex - 1 : currentPathIndex + 1;
+      setCurrentPathIndex(nextIndex);
+      setTrainPosition(selectedTrack.path[nextIndex]);
+    }
+  }, [selectedTrack, trainPosition, tracks, currentPathIndex, isReversed]);
+  
   // Función para alternar el modo automático del tren
   const toggleAutoMode = useCallback(() => {
     if (!selectedTrack && !autoMode) {
@@ -98,7 +174,7 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
     setAutoMode(newAutoMode);
     
     if (newAutoMode) {
-      // Si activamos el modo automático y el tren no está en movimiento, iniciamos el movimiento
+      // Si activamos el modo automático, iniciamos el movimiento
       if (!trainMoving && selectedTrack) {
         // Iniciar con la primera coordenada de la vía
         setTrainMoving(true);
@@ -220,8 +296,7 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
     setTrainSpeed(speed);
   }, []);
 
-  // Estado para controlar la dirección del tren en la vía actual
-  const [isReversed, setIsReversed] = useState<boolean>(false);
+  // Esta declaración se ha movido arriba
 
   // Manejar click en el botón de movimiento del tren
   const handleMoveTrainClick = useCallback(() => {
@@ -308,7 +383,26 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
     // Movimiento normal dentro de la misma vía
     setCurrentPathIndex(nextIndex);
     setTrainPosition(selectedTrack.path[nextIndex]);
-  }, [selectedTrack, currentPathIndex, isReversed, tracks]);
+  }, [selectedTrack, currentPathIndex, isReversed, tracks, autoMode]);
+  
+  // Efecto para el modo automático
+  useEffect(() => {
+    if (!autoMode) return;
+    
+    // Crear un temporizador para mover el tren cada segundo
+    const intervalId = setInterval(() => {
+      if (!selectedTrack || selectedTrack.path.length === 0) {
+        setAutoMode(false);
+        toast.error("No hay vía seleccionada");
+        return;
+      }
+      
+      // Mover el tren un paso adelante
+      handleMoveTrainClick();
+    }, 1000); // 1 segundo
+    
+    return () => clearInterval(intervalId);
+  }, [autoMode, selectedTrack, handleMoveTrainClick]);
 
   // Manejar la selección de una vía
   const handleTrackSelect = useCallback((trackId: string) => {
