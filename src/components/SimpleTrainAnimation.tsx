@@ -22,9 +22,35 @@ const SimpleTrainAnimation: React.FC = () => {
           </div>
         </div>
         
-        {/* Vagón */}
+        {/* Vagón 1 */}
         <div>
           <div className="wagon">
+            <div className="wagon-window wagon-window-1"></div>
+            <div className="wagon-window wagon-window-2"></div>
+          </div>
+          <div className="wagon-base"></div>
+          <div className="train-wheels">
+            <div className="wheel"></div>
+            <div className="wheel"></div>
+          </div>
+        </div>
+        
+        {/* Vagón 2 */}
+        <div>
+          <div className="wagon" style={{ backgroundColor: '#E91E63' }}>
+            <div className="wagon-window wagon-window-1"></div>
+            <div className="wagon-window wagon-window-2"></div>
+          </div>
+          <div className="wagon-base"></div>
+          <div className="train-wheels">
+            <div className="wheel"></div>
+            <div className="wheel"></div>
+          </div>
+        </div>
+        
+        {/* Vagón 3 */}
+        <div>
+          <div className="wagon" style={{ backgroundColor: '#009688' }}>
             <div className="wagon-window wagon-window-1"></div>
             <div className="wagon-window wagon-window-2"></div>
           </div>

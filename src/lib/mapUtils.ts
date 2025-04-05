@@ -29,6 +29,11 @@ const MIN_STATION_DISTANCE = 0.2; // Reducido para permitir estaciones más cerc
 // Token de MapBox para geocodificación
 const MAPBOX_TOKEN = 'pk.eyJ1IjoiNDIwYnRjIiwiYSI6ImNtOTN3ejBhdzByNjgycHF6dnVmeHl2ZTUifQ.Utq_q5wN6DHwpkn6rcpZdw';
 
+// Interfaz simplificada para información de ubicación (solo calle)
+export interface LocationInfo {
+  streetName: string;
+}
+
 // Geocoding helper function using MapBox API
 export const geocodeAddress = async (address: string): Promise<Coordinates> => {
   // Si no hay dirección, usar coordenadas predeterminadas
@@ -70,6 +75,120 @@ export const geocodeAddress = async (address: string): Promise<Coordinates> => {
   } catch (error) {
     console.error('Error en geocodificación:', error);
     return DEFAULT_COORDINATES;
+  }
+};
+
+// Cache para almacenar resultados de geocodificación inversa y evitar llamadas repetidas
+const geocodeCache: Record<string, LocationInfo> = {};
+
+// Función de geocodificación inversa optimizada y cacheada
+export const reverseGeocode = async (coordinates: Coordinates): Promise<LocationInfo> => {
+  // Crear una clave para el cache basada en las coordenadas redondeadas (para agrupar puntos cercanos)
+  const cacheKey = `${coordinates.lat.toFixed(5)},${coordinates.lng.toFixed(5)}`;
+  
+  // Verificar si ya tenemos este resultado en cache
+  if (geocodeCache[cacheKey]) {
+    return geocodeCache[cacheKey];
+  }
+  
+  try {
+    // Usar la API de MapBox para geocodificación inversa con timeout corto
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000); // Solo 2 segundos para mejorar rendimiento
+    
+    const response = await fetch(
+      `https://api.mapbox.com/geocoding/v5/mapbox.places/${coordinates.lng},${coordinates.lat}.json?access_token=${MAPBOX_TOKEN}&language=es&limit=1`,
+      { 
+        method: 'GET',
+        signal: controller.signal
+      }
+    );
+    
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) {
+      throw new Error(`MapBox API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    // Procesar los resultados
+    if (data.features && data.features.length > 0) {
+      const feature = data.features[0]; // Usar solo el primer resultado para mayor velocidad
+      
+      // Extraer el nombre más relevante
+      let streetName = '';
+      
+      // Si es una dirección, extraer solo el nombre de la calle
+      if (feature.place_type.includes('address')) {
+        // Extraer el primer componente que suele ser el nombre de la calle
+        streetName = feature.text || '';
+      } 
+      // Si es un punto de interés, usar su nombre
+      else if (feature.place_type.includes('poi')) {
+        streetName = feature.text || '';
+      }
+      // Si es un lugar, usar su nombre
+      else if (feature.text) {
+        streetName = feature.text;
+      }
+      // Si todo falla, usar el primer componente del place_name
+      else if (feature.place_name) {
+        const parts = feature.place_name.split(',');
+        streetName = parts[0].trim();
+      }
+      
+      // Limpiar el nombre
+      streetName = streetName.replace(/[0-9\/#-.,]/g, '').trim();
+      
+      // Extraer la parte significativa del nombre de la calle
+      const words = streetName.split(' ');
+      
+      // Lista de prefijos comunes de calles en español
+      const prefijos = ['calle', 'avenida', 'av', 'c/', 'av.', 'plaza', 'paseo', 'camino', 'carretera', 'bulevar', 'gran', 'vía', 'ronda', 'travesía', 'callejón', 'de', 'del', 'la', 'las', 'los', 'el'];
+      
+      if (words.length > 1) {
+        // Comprobar si la primera palabra es un prefijo común
+        if (prefijos.includes(words[0].toLowerCase())) {
+          // Si la segunda palabra también es un prefijo (ej: "Calle de"), tomar la tercera
+          if (words.length > 2 && prefijos.includes(words[1].toLowerCase())) {
+            if (words.length > 3 && prefijos.includes(words[2].toLowerCase())) {
+              // Si hay tres prefijos (ej: "Avenida de la"), tomar la cuarta palabra
+              streetName = words.slice(3).join(' ');
+            } else {
+              // Si hay dos prefijos (ej: "Calle de"), tomar desde la tercera palabra
+              streetName = words.slice(2).join(' ');
+            }
+          } else {
+            // Si solo hay un prefijo (ej: "Calle"), tomar desde la segunda palabra
+            streetName = words.slice(1).join(' ');
+          }
+        }
+        
+        // Si después de procesar quedó muy largo, acortar
+        const processedWords = streetName.split(' ');
+        if (processedWords.length > 2) {
+          // Tomar solo las dos primeras palabras significativas
+          streetName = processedWords.slice(0, 2).join(' ');
+        }
+      }
+      
+      // Guardar en cache
+      const result = { streetName: streetName || 'Estación' };
+      geocodeCache[cacheKey] = result;
+      return result;
+    }
+    
+    // Si no hay resultados
+    const defaultResult = { streetName: 'Estación' };
+    geocodeCache[cacheKey] = defaultResult;
+    return defaultResult;
+  } catch (error) {
+    console.error('Error en geocodificación inversa:', error);
+    // Guardar en cache incluso los errores para evitar reintentos
+    const errorResult = { streetName: 'Estación' };
+    geocodeCache[cacheKey] = errorResult;
+    return errorResult;
   }
 };
 
@@ -555,36 +674,10 @@ export const generateStations = (tracks: TrackSegment[]): any[] => {
   
   console.log('Generating stations...');
   
-  // Nombres realistas para las estaciones de metro
-  const stationNamePrefixes = [
-    'Plaza', 'Avenida', 'Calle', 'Paseo', 'Gran Vía', 'Parque', 'Puerta', 'Estación', 
-    'Universidad', 'Hospital', 'Palacio', 'Museo', 'Teatro', 'Mercado', 'Catedral'
-  ];
-  
-  const stationNameSuffixes = [
-    'Mayor', 'Central', 'Norte', 'Sur', 'Este', 'Oeste', 'Principal', 'Nuevo', 'Viejo',
-    'del Sol', 'de España', 'de la Constitución', 'de las Artes', 'de los Deportes',
-    'del Prado', 'de la Ciencia', 'de la Independencia', 'del Retiro'
-  ];
-  
-  // Función para generar un nombre aleatorio para una estación
+  // Función simplificada para generar nombres temporales de estaciones
+  // Estos nombres serán reemplazados por los nombres reales de calles mediante geocodificación inversa
   const generateStationName = (index: number): string => {
-    // Cada 5 estaciones, usar un nombre simple numérico
-    if (index % 5 === 0) {
-      return `Estación ${index + 1}`;
-    }
-    
-    // Para el resto, generar un nombre más realista
-    const usePrefix = Math.random() > 0.3;
-    
-    if (usePrefix) {
-      const prefix = stationNamePrefixes[Math.floor(Math.random() * stationNamePrefixes.length)];
-      const suffix = stationNameSuffixes[Math.floor(Math.random() * stationNameSuffixes.length)];
-      return `${prefix} ${suffix}`;
-    } else {
-      // Algunos nombres son solo una palabra
-      return stationNameSuffixes[Math.floor(Math.random() * stationNameSuffixes.length)];
-    }
+    return `E${index + 1}`;
   };
   
   const stations: any[] = [];
@@ -710,7 +803,8 @@ export const generateStations = (tracks: TrackSegment[]): any[] => {
           name: stationName,
           trackId: track.id,
           color: track.color,
-          isTerminal: i === 0 || i === points.length - 1
+          isTerminal: i === 0 || i === points.length - 1,
+          // No inicializamos locationInfo aquí, se cargará bajo demanda en StationMarker
         };
         
         trackStations.push(newStation);
@@ -738,7 +832,8 @@ export const generateStations = (tracks: TrackSegment[]): any[] => {
               name: stationName,
               trackId: track.id,
               color: track.color,
-              isTerminal: false
+              isTerminal: false,
+              // No inicializamos locationInfo aquí, se cargará bajo demanda en StationMarker
             };
             
             trackStations.push(newStation);

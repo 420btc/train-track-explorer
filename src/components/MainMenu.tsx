@@ -63,10 +63,10 @@ const MainMenu: React.FC<MainMenuProps> = ({ onStartGame }) => {
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <div className="text-center">
           <h1 className="text-5xl md:text-7xl font-bold text-white mb-6 drop-shadow-lg">
-            Metro Español
+            Metro Español v0.1
           </h1>
           <p className="text-2xl md:text-3xl text-white mb-12 drop-shadow-md">
-            Explora las vías de tren por toda España
+            Tu ciudad convertida en un juego de trenes!
           </p>
           
 

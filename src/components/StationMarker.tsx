@@ -1,8 +1,8 @@
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Marker, Tooltip } from 'react-leaflet';
 import L from 'leaflet';
-import { Coordinates } from '@/lib/mapUtils';
+import { Coordinates, LocationInfo, reverseGeocode } from '@/lib/mapUtils';
 import { Passenger } from './PassengerSystem';
 
 interface Station {
@@ -12,6 +12,7 @@ interface Station {
   trackId: string;
   color?: string;
   canGenerate?: boolean;
+  locationInfo?: LocationInfo;
 }
 
 interface StationMarkerProps {
@@ -22,6 +23,39 @@ interface StationMarkerProps {
 }
 
 const StationMarker: React.FC<StationMarkerProps> = ({ position, station, onClick, waitingPassengers = [] }) => {
+  // Usar useRef para evitar actualizaciones innecesarias
+  const hasTriedFetch = React.useRef(false);
+  
+  // Cargar el nombre de la calle usando geocodificación inversa inmediatamente al montar
+  useEffect(() => {
+    // Solo intentar obtener el nombre de la calle una vez por estación
+    if (!hasTriedFetch.current && !station.locationInfo) {
+      hasTriedFetch.current = true;
+      
+      const fetchStreetName = async () => {
+        try {
+          console.log(`Obteniendo nombre para estación ${station.id}`);
+          const info = await reverseGeocode(station.position);
+          
+          // Actualizar la estación con el nombre de la calle
+          station.locationInfo = info;
+          
+          // Reemplazar el nombre de la estación con el nombre de la calle
+          if (info.streetName && info.streetName !== 'Estación') {
+            station.name = info.streetName;
+            // Forzar actualización
+            onClick(station);
+          }
+        } catch (error) {
+          console.error('Error al obtener nombre de calle:', error);
+        }
+      };
+      
+      // Ejecutar inmediatamente
+      fetchStreetName();
+    }
+  }, [station]);
+  
   // Create a custom icon for stations
   const stationIcon = L.divIcon({
     html: `
@@ -63,6 +97,8 @@ const StationMarker: React.FC<StationMarkerProps> = ({ position, station, onClic
       <Tooltip direction="top" offset={[0, -10]} opacity={1} permanent={false}>
         <div className="text-xs">
           <div className="font-medium">{station.name}</div>
+          
+          {/* Información de pasajeros */}
           {waitingPassengers.length > 0 && (
             <div className="mt-1 text-[10px]">
               <div className="flex justify-between items-center">
