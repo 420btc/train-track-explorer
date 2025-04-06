@@ -62,13 +62,13 @@ const TrackLegend: React.FC<TrackLegendProps> = ({ tracks, stations = [] }) => {
       )}
       
       <div className="mt-2 pt-2 border-t text-xs">
-        <div className="flex items-center mb-1">
-          <div className="w-3 h-3 rounded-full mr-2 bg-[#9C27B0]" />
-          <span className="font-medium">Conexiones</span>
-        </div>
         <div className="flex items-center mt-2">
           <div className="w-3 h-3 rounded-full mr-2 bg-red-500 border border-black" />
           <span className="font-medium">Estaciones</span>
+        </div>
+        <div className="flex items-center mt-2">
+          <div className="w-3 h-3 rounded-full mr-2 border border-black" style={{ backgroundColor: '#D4AF37', boxShadow: '0 0 0 1px white, 0 0 3px rgba(0,0,0,0.3)' }} />
+          <span className="font-medium">Estación Personal</span>
         </div>
       </div>
     </div>

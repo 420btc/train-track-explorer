@@ -60,6 +60,13 @@ interface GameContextType {
   trainSpeed: number;
   canGeneratePassengers: boolean;
   deliveredPassengers: Passenger[];
+  gameStarted: boolean;
+  showStartArrow: boolean;
+  personalStationId: string | null;
+  playerLevel: number;
+  gameStartTime: number | null;
+  passengersToNextLevel: number;
+  passengersCollected: number;
 
   // Funciones para actualizar el estado
   setMoney: (money: number) => void;
@@ -85,6 +92,8 @@ interface GameContextType {
   resetGame: () => void;
   upgradeSpeed: () => void;
   addNewStation: () => void;
+  startGame: () => void;
+  setPersonalStationId: (id: string | null) => void;
 }
 
 // Crear el contexto
@@ -108,8 +117,15 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [hasUnlocked, setHasUnlocked] = useState<boolean>(false);
   const [messages, setMessages] = useState<GameMessage[]>([]);
   const [trainSpeed, setTrainSpeed] = useState<number>(50);
-  const [canGeneratePassengers, setCanGeneratePassengers] = useState<boolean>(true);
+  const [canGeneratePassengers, setCanGeneratePassengers] = useState<boolean>(false); // Inicialmente desactivado
   const [deliveredPassengers, setDeliveredPassengers] = useState<Passenger[]>([]);
+  const [gameStarted, setGameStarted] = useState<boolean>(false);
+  const [showStartArrow, setShowStartArrow] = useState<boolean>(false);
+  const [personalStationId, setPersonalStationId] = useState<string | null>(null);
+  const [playerLevel, setPlayerLevel] = useState<number>(2); // Empezamos en nivel 2 después del tutorial
+  const [gameStartTime, setGameStartTime] = useState<number | null>(null);
+  const [passengersToNextLevel, setPassengersToNextLevel] = useState<number>(5); // Inicialmente 5 pasajeros para pasar al nivel 3
+  const [passengersCollected, setPassengersCollected] = useState<number>(0);
 
   // Función para añadir un pasajero
   const addPassenger = (passenger: Passenger) => {
@@ -151,7 +167,51 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (trainPassengers.length < trainCapacity) {
       setTrainPassengers(prev => [...prev, passenger]);
       removePassenger(passenger.id);
+      
+      // Incrementar contador de pasajeros recogidos para el sistema de niveles
+      setPassengersCollected(prev => prev + 1);
+      
+      // Verificar si se ha alcanzado el objetivo para subir de nivel
+      if (passengersCollected + 1 >= passengersToNextLevel) {
+        levelUp();
+      }
     }
+  };
+  
+  // Función para subir de nivel
+  const levelUp = () => {
+    const newLevel = playerLevel + 1;
+    setPlayerLevel(newLevel);
+    
+    // Calcular el número de pasajeros necesarios para el siguiente nivel
+    // Nueva escala: nivel 1: 5, nivel 2: 10, nivel 3: 15, nivel 4: 20, nivel 5: 30, etc.
+    let nextLevelTarget;
+    switch (newLevel) {
+      case 2: nextLevelTarget = 10; break;  // Para pasar al nivel 3
+      case 3: nextLevelTarget = 15; break;  // Para pasar al nivel 4
+      case 4: nextLevelTarget = 20; break;  // Para pasar al nivel 5
+      case 5: nextLevelTarget = 30; break;  // Para pasar al nivel 6
+      case 6: nextLevelTarget = 40; break;  // Para pasar al nivel 7
+      case 7: nextLevelTarget = 50; break;  // Para pasar al nivel 8
+      case 8: nextLevelTarget = 60; break;  // Para pasar al nivel 9
+      case 9: nextLevelTarget = 70; break;  // Para pasar al nivel 10
+      case 10: nextLevelTarget = 100; break; // Para pasar al nivel 11 (si se implementa)
+      default: nextLevelTarget = Math.floor(100 + (newLevel - 10) * 20); // Incremento de 20 por nivel después del 10
+    }
+    
+    setPassengersToNextLevel(nextLevelTarget);
+    setPassengersCollected(0); // Reiniciar contador para el nuevo nivel
+    
+    // Añadir mensaje de subida de nivel
+    addMessage({
+      id: uuidv4(),
+      text: `¡Has subido al nivel ${newLevel}! Ahora necesitas recoger ${nextLevelTarget} pasajeros para el siguiente nivel.`,
+      color: 'gold'
+    });
+    
+    // Dar bonificación por subir de nivel
+    setMoney(prev => prev + newLevel * 100); // Bonificación de dinero basada en el nivel
+    setPoints(prev => prev + newLevel * 50);  // Bonificación de puntos basada en el nivel
   };
 
   // Función para eliminar un pasajero del tren
@@ -185,16 +245,34 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   // Función para reiniciar el juego
   const resetGame = () => {
-    setMoney(1000);
-    setPoints(0);
-    setHappiness(0);
+    // Limpiar todos los pasajeros existentes
     setPassengers([]);
     setDesires([]);
     setEvents([]);
-    setTrainCapacity(1);
     setTrainPassengers([]);
-    setHasUnlocked(false);
-    setTrainSpeed(50);
+    setDeliveredPassengers([]);
+    
+    // Desactivar generación de pasajeros hasta que se presione el botón
+    setCanGeneratePassengers(false);
+    
+    // Reiniciar el estado de inicio del juego
+    setGameStarted(false);
+    
+    // Mostrar la flecha de inicio
+    setShowStartArrow(true);
+    
+    // Reiniciar el sistema de niveles
+    setPlayerLevel(1); // Volver al nivel 1
+    setGameStartTime(null);
+    setPassengersCollected(0);
+    setPassengersToNextLevel(5); // 5 pasajeros para pasar al nivel 2
+    
+    // Mostrar mensaje informativo
+    addMessage({
+      id: uuidv4(),
+      text: '¡Juego reiniciado! Pulsa el botón dorado INICIAR para que los pasajeros comiencen a llegar a las estaciones.',
+      color: '#FFD700' // Color dorado
+    });
   };
 
   // Función para mejorar la velocidad del tren
@@ -416,38 +494,149 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return () => clearInterval(eventTimer);
   }, [events]);
 
-  // Efecto para generar pasajeros cada 30 segundos
+
+
+  // Función para iniciar la generación de pasajeros
+  const startGame = () => {
+    // Limpiar cualquier pasajero existente antes de comenzar
+    setPassengers([]);
+    
+    // Activar la generación de pasajeros
+    setGameStarted(true);
+    setCanGeneratePassengers(true);
+    setShowStartArrow(false);
+    
+    // Establecer la primera estación como estación personal
+    if (stations.length > 0) {
+      const personalStationId = stations[0].id;
+      // Actualizar el estado global de la estación personal
+      setPersonalStationId(personalStationId);
+      console.log(`Estableciendo estación personal: ${personalStationId}, Nombre: ${stations[0].name}`);
+    }
+    
+    // Inicializar el sistema de niveles
+    setPlayerLevel(1); // Empezamos en nivel 1
+    setGameStartTime(Date.now());
+    setPassengersCollected(0);
+    setPassengersToNextLevel(5); // 5 pasajeros para pasar al nivel 2
+    
+    // Añadir mensaje de inicio
+    addMessage({
+      id: uuidv4(),
+      text: 'Los pasajeros comenzarán a llegar a las estaciones. Recoge 5 pasajeros para subir al nivel 2.',
+      color: '#FFD700' // Color dorado
+    });
+  };
+  
+  // Efecto para mostrar la flecha y un mensaje inicial cuando se inicia el componente
   useEffect(() => {
-    if (stations.length < 2 || !canGeneratePassengers) return;
+    if (!gameStarted) {
+      // Mostrar la flecha después de un breve retraso
+      const arrowTimer = setTimeout(() => {
+        setShowStartArrow(true);
+        
+        // Añadir mensaje inicial que indique al jugador que debe pulsar el botón dorado
+        addMessage({
+          id: uuidv4(),
+          text: '¡Bienvenido! Pulsa el botón dorado INICIAR para que los pasajeros comiencen a llegar a las estaciones.',
+          color: '#FFD700' // Color dorado
+        });
+      }, 1000);
+      
+      return () => clearTimeout(arrowTimer);
+    }
+  }, [gameStarted]);
+  
+  // Efecto para generar pasajeros progresivamente después de pulsar el botón de inicio
+  useEffect(() => {
+    // No generar pasajeros si no hay suficientes estaciones, si no se puede generar pasajeros o si el juego no ha comenzado
+    if (stations.length < 2 || !canGeneratePassengers || !gameStarted) return;
+    
+    // Al iniciar el juego, limpiar cualquier pasajero existente para asegurar que empezamos desde cero
+    if (gameStarted && passengers.length > 0) {
+      setPassengers([]);
+    }
     
     const generatePassengers = () => {
-      // Para cada estación, generar 1-4 pasajeros
-      stations.forEach(station => {
-        // Verificar si es la estación principal/inicial (donde reaparece el tren)
-        const isMainStation = (
-          station.id === 'central-station' || 
-          station.id === 'main-station' || 
-          station.id === 'starting-station' || 
-          station.id.includes('main') || 
-          (trainPosition && station.position.lat === trainPosition.lat && station.position.lng === trainPosition.lng)
+      // Obtener la hora actual para ajustar la generación de pasajeros
+      const currentHour = new Date().getHours();
+      const isDaytime = currentHour >= 7 && currentHour < 19; // Día: 7am-7pm
+      
+      // Calcular el tiempo transcurrido desde el inicio del juego (en minutos)
+      const gameTimeMinutes = gameStartTime ? Math.floor((Date.now() - gameStartTime) / 60000) : 0;
+      
+      // Calcular el número total de pasajeros activos permitidos según el nivel
+      // Nivel 2: máximo 10 pasajeros, Nivel 3: máximo 15, etc.
+      const maxTotalPassengers = Math.floor(5 + (playerLevel * 2.5));
+      
+      // Si ya hay demasiados pasajeros activos, no generar más
+      if (passengers.filter(p => !p.isPickedUp).length >= maxTotalPassengers) {
+        return;
+      }
+      
+      // Ajustar la cantidad máxima de pasajeros por generación según nivel y hora
+      let maxPassengersPerGeneration;
+      if (isDaytime) {
+        // Durante el día: más pasajeros, escalando con el nivel
+        maxPassengersPerGeneration = Math.floor(1 + (playerLevel - 2) * 0.7);
+      } else {
+        // Durante la noche: menos pasajeros
+        maxPassengersPerGeneration = Math.floor((playerLevel - 2) * 0.5);
+      }
+      
+      // Asegurar que siempre haya al menos 1 pasajero en niveles superiores
+      maxPassengersPerGeneration = Math.max(1, maxPassengersPerGeneration);
+      
+      // Para cada estación, generar pasajeros gradualmente (no todas las estaciones a la vez)
+      // Seleccionar un subconjunto aleatorio de estaciones para esta generación
+      // La probabilidad de selección aumenta con el nivel del jugador
+      const stationSelectionProbability = 0.2 + (playerLevel * 0.02); // 20% base + 2% por nivel
+      
+      const stationsToGenerate = stations.filter(station => {
+        // Verificar si es la estación personal/principal (donde reaparece el tren)
+        const isPersonalStation = station.id === personalStationId;
+        
+        // No generar pasajeros en la estación personal/principal
+        if (isPersonalStation) return false;
+        
+        // Probabilidad de selección basada en el nivel
+        return Math.random() < stationSelectionProbability;
+      });
+      
+      stationsToGenerate.forEach(station => {
+        // Calcular cuántos pasajeros generar en esta estación
+        const basePassengers = isDaytime ? 1 : 0;
+        const numPassengers = Math.min(
+          basePassengers + Math.floor(Math.random() * maxPassengersPerGeneration),
+          maxPassengersPerGeneration
         );
         
-        // No generar pasajeros en la estación principal
-        if (isMainStation) return;
-        
-        const numPassengers = Math.floor(Math.random() * 4) + 1;
-        
         for (let i = 0; i < numPassengers; i++) {
-          // Seleccionar una estación de destino aleatoria (diferente a la de origen)
-          let destinationIndex;
-          do {
-            destinationIndex = Math.floor(Math.random() * stations.length);
-          } while (stations[destinationIndex].id === station.id);
+          // Seleccionar la estación personal como destino para el objetivo del juego
+          // Encontrar la estación personal
+          const personalStation = stations.find(s => s.id === personalStationId);
           
-          const destination = stations[destinationIndex];
+          // Si no hay estación personal, seleccionar una aleatoria
+          let destination;
+          if (personalStation && Math.random() < 0.7) { // 70% de probabilidad de ir a la estación personal
+            destination = personalStation;
+          } else {
+            // Seleccionar una estación de destino aleatoria (diferente a la de origen)
+            let destinationIndex;
+            do {
+              destinationIndex = Math.floor(Math.random() * stations.length);
+            } while (stations[destinationIndex].id === station.id);
+            
+            destination = stations[destinationIndex];
+          }
           
-          // Seleccionar un motivo aleatorio
-          const motives = ['Ir al trabajo', 'Visitar a un amigo', 'Ir de compras', 'Asistir a un evento'];
+          // Seleccionar un motivo aleatorio basado en la hora del día
+          let motives;
+          if (isDaytime) {
+            motives = ['Ir al trabajo', 'Ir de compras', 'Asistir a un evento', 'Visitar a un amigo'];
+          } else {
+            motives = ['Volver a casa', 'Salir de fiesta', 'Visitar a un amigo', 'Turno nocturno'];
+          }
           const motive = motives[Math.floor(Math.random() * motives.length)];
           
           // Añadir el pasajero al estado
@@ -474,9 +663,15 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     // Generar pasajeros cada 30 segundos (o 15s si hay evento cultural)
     const passengerInterval = setInterval(generatePassengers, interval);
     
-    // Limpiar el intervalo al desmontar
-    return () => clearInterval(passengerInterval);
-  }, [stations, canGeneratePassengers, events]);
+    // Generar el primer lote de pasajeros después de un breve retraso para que sea gradual
+    const initialDelay = setTimeout(generatePassengers, 2000);
+    
+    // Limpiar el intervalo y el timeout al desmontar
+    return () => {
+      clearInterval(passengerInterval);
+      clearTimeout(initialDelay);
+    };
+  }, [stations, canGeneratePassengers, events, gameStarted, passengers.length]);
 
   // Valor del contexto
   const value = {
@@ -497,6 +692,13 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     trainSpeed,
     canGeneratePassengers,
     deliveredPassengers,
+    gameStarted,
+    showStartArrow,
+    personalStationId,
+    playerLevel,
+    gameStartTime,
+    passengersToNextLevel,
+    passengersCollected,
     setMoney,
     setPoints,
     setHappiness,
@@ -519,7 +721,9 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setCanGeneratePassengers,
     resetGame,
     upgradeSpeed,
-    addNewStation
+    addNewStation,
+    startGame,
+    setPersonalStationId
   };
 
   return (

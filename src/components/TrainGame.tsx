@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import PassengerNotification from './PassengerNotification';
 import { 
@@ -16,6 +15,7 @@ import {
   calculateDistance
 } from '@/lib/mapUtils';
 import { toast } from 'sonner';
+import GameStartButton from './GameStartButton';
 import { GameProvider, Passenger, Desire, GameEvent, GameMessage, useGame } from '@/contexts/GameContext';
 import GameContent from './GameContent';
 import { getCurrentUser } from '@/lib/authUtils';
@@ -72,7 +72,7 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
   
   // Estado para rastrear vías visitadas (evitar bucles)
   const [visitedTracks, setVisitedTracks] = useState<Set<string>>(new Set());
-  
+
   // Estado para el modo de exploración completa (recorrer todas las vías)
   const [exploreAllMode, setExploreAllMode] = useState<boolean>(false);
   
@@ -103,6 +103,7 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
   const [money, setMoney] = useState<number>(currentLevel?.initialMoney || 1000);
   const [points, setPoints] = useState<number>(0);
   const [happiness, setHappiness] = useState<number>(currentLevel?.initialHappiness || 50);
+  const [gameStarted, setGameStarted] = useState<boolean>(false);
 
   // Variable para controlar si es la primera carga del juego
   const isFirstLoad = useRef(true);
@@ -115,6 +116,46 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
   const [pickupNotification, setPickupNotification] = useState({ visible: false, count: 0 });
   const [dropoffNotification, setDropoffNotification] = useState({ visible: false, count: 0 });
   
+  // Estado para la estación personal
+  const [personalStationId, setPersonalStationId] = useState<string | null>(null);
+
+  // Obtener el contexto del juego
+  const gameContext = useGame();
+  const { 
+    canGeneratePassengers, 
+    showStartArrow, 
+    startGame: startGameContext,
+    setCanGeneratePassengers,
+    stations: contextStations,
+    setPersonalStationId: setPersonalStationIdContext
+  } = gameContext;
+
+  // Función para establecer la estación personal
+  const setPersonalStation = (stationId: string) => {
+    setPersonalStationId(stationId);
+    // Actualizar el estado global de la estación personal
+    setPersonalStationIdContext(stationId);
+  };
+
+  // Efecto para establecer la estación personal cuando el juego comienza
+  useEffect(() => {
+    if (gameStarted && !personalStationId) {
+      // Establecer la primera estación como estación personal
+      if (contextStations.length > 0) {
+        setPersonalStation(contextStations[0].id);
+      }
+    }
+  }, [gameStarted, personalStationId, setPersonalStation, contextStations]);
+
+  // Efecto para manejar el inicio del juego
+  useEffect(() => {
+    if (gameStarted && contextStations.length > 0) {
+      // Iniciar el juego usando el contexto
+      startGameContext();
+      setCanGeneratePassengers(true);
+    }
+  }, [gameStarted, contextStations, startGameContext, setCanGeneratePassengers]);
+
   const initializeGame = useCallback(async (center: Coordinates) => {
     setIsLoading(true);
     
@@ -998,15 +1039,11 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
         if (nextTrack) {
           // Actualizar la vía seleccionada
           setSelectedTrack(nextTrack);
+          setCurrentPathIndex(0);
+          setTrainPosition(nextTrack.path[0]);
           setCurrentTrackId(nextTrack.id);
-          setIsReversed(connectingInfo.reversed);
-          
-          // Establecer el índice inicial en la nueva vía
-          setCurrentPathIndex(connectingInfo.startIndex);
-          setTrainPosition(nextTrack.path[connectingInfo.startIndex]);
-          
-          toast.success(`Conectando con vía ${nextTrack.id}`);
-          return;
+          setIsReversed(false); // Reiniciar dirección al seleccionar una nueva vía
+          toast.success(`Vía seleccionada: ${nextTrack.id}`);
         }
       }
       
@@ -1089,8 +1126,25 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
     }
   }, [tracks]);
 
+  // Efecto para manejar el inicio del juego
+  useEffect(() => {
+    if (gameStarted && contextStations.length > 0) {
+      // Iniciar el juego usando el contexto
+      startGameContext();
+      setCanGeneratePassengers(true);
+    }
+  }, [gameStarted, contextStations, startGameContext, setCanGeneratePassengers]);
+
+  // Efecto para inicializar el juego cuando las estaciones estén listas
+  useEffect(() => {
+    if (contextStations.length > 0 && !gameStarted) {
+      initializeGame(DEFAULT_COORDINATES);
+    }
+  }, [contextStations, gameStarted, initializeGame]);
+
   return (
     <div className="flex flex-col h-screen">
+      {/* Panel superior izquierdo con menú */}
       <div className="absolute top-4 left-4 z-50">
         <div className="bg-background/80 backdrop-blur-sm p-2 rounded-lg shadow-lg border border-primary/20 flex items-center gap-2">
           <Sheet>
@@ -1243,6 +1297,9 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
                 difficulty={difficulty}
                 currentLevel={currentLevel} // Pasar el nivel actual
                 trainCapacity={trainCapacity} // Usar la capacidad dinámica del tren
+                gameStarted={gameStarted} // Pasar el estado del juego
+                canGeneratePassengers={canGeneratePassengers} // Pasar si se pueden generar pasajeros
+                personalStationId={personalStationId} // Pasar la estación personal
               />
             </div>
             
@@ -1264,6 +1321,20 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
                       pickedUpPassengers={pickedUpPassengers}
                     />
                     <div className="flex items-center gap-2 ml-3">
+                      {/* Botón dorado de inicio */}
+                      <div className="mr-2 relative">
+                        <GameStartButton 
+                          onStart={() => {
+                            setGameStarted(true);
+                            startGameContext();
+                          }} 
+                          gameStarted={gameStarted} 
+                          showArrow={showStartArrow} 
+                        />
+                      </div>
+                      
+                      <div className="h-7 w-[1px] bg-border mx-1" />
+                      
                       <Button
                         onClick={() => setSeatsModalVisible(true)}
                         variant="outline"
@@ -1571,6 +1642,28 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
         isVisible={dropoffNotification.visible}
         position="dropoff"
         onAnimationComplete={() => setDropoffNotification({ visible: false, count: 0 })}
+      />
+      
+      {/* Explorador de ciudades */}
+      <CityExplorer
+        open={showCityExplorer}
+        onOpenChange={setShowCityExplorer}
+        onCitySelect={(coordinates) => {
+          setMapCenter(coordinates);
+          setMapZoom(14);
+          initializeGame(coordinates);
+        }}
+      />
+      
+      {/* Mis rutas */}
+      <MyRoutes
+        open={showMyRoutes}
+        onOpenChange={setShowMyRoutes}
+        onRouteSelect={(coordinates) => {
+          setMapCenter(coordinates);
+          setMapZoom(14);
+          initializeGame(coordinates);
+        }}
       />
     </div>
   );

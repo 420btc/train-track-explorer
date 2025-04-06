@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useState } from 'react';
 import { MapContainer as LeafletMap, TileLayer, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
@@ -7,6 +6,7 @@ import StationMarker from './StationMarker';
 import { toast } from 'sonner';
 import { Coordinates, TrackSegment } from '@/lib/mapUtils';
 import PassengerSystem, { Passenger } from './PassengerSystem';
+import './TrackEffects.css'; // Importar los estilos para efectos de vías
 import { Dispatch, SetStateAction } from 'react';
 
 // Helper component to update map view
@@ -60,6 +60,9 @@ interface MapContainerProps {
     trainCapacity?: number;
   };
   trainCapacity?: number;
+  gameStarted?: boolean; // Añadir propiedad para controlar si el juego ha comenzado
+  canGeneratePassengers?: boolean; // Añadir propiedad para controlar si se pueden generar pasajeros
+  personalStationId?: string; // Nueva propiedad para identificar la estación personal
 }
 
 const MapContainer: React.FC<MapContainerProps> = ({ 
@@ -83,9 +86,26 @@ const MapContainer: React.FC<MapContainerProps> = ({
   setActivePassengers,
   difficulty = 'medium',
   currentLevel,
-  trainCapacity = 4
+  trainCapacity = 4,
+  gameStarted = false,
+  canGeneratePassengers = false,
+  personalStationId
 }) => {
+  // Usar useEffect para la depuración en lugar de hacerlo durante el renderizado
+  useEffect(() => {
+    if (personalStationId) {
+      console.log('MapContainer - personalStationId:', personalStationId);
+      console.log('Estación personal encontrada:', stations.find(s => s.id === personalStationId)?.name);
+    }
+  }, [personalStationId, stations]);
+  
+  // Estado para la estación seleccionada
   const [selectedStation, setSelectedStation] = useState<Station | null>(null);
+  
+  // Estado para la vía seleccionada y su temporizador
+  const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
+  const [trackHighlightTimer, setTrackHighlightTimer] = useState<NodeJS.Timeout | null>(null);
+  
   const animationFrameRef = useRef(null);
 
   // Handle station click
@@ -96,6 +116,23 @@ const MapContainer: React.FC<MapContainerProps> = ({
 
   // Handle track click
   const handleTrackClick = (trackId: string) => {
+    // Establecer la vía seleccionada
+    setSelectedTrackId(trackId);
+    
+    // Limpiar cualquier temporizador existente
+    if (trackHighlightTimer) {
+      clearTimeout(trackHighlightTimer);
+    }
+    
+    // Establecer un temporizador para quitar el resaltado después de 1.5 segundos
+    const timer = setTimeout(() => {
+      setSelectedTrackId(null);
+    }, 1500);
+    
+    // Guardar la referencia al temporizador
+    setTrackHighlightTimer(timer);
+    
+    // Llamar a las funciones de callback si existen
     if (onTrackSelect) {
       onTrackSelect(trackId);
     }
@@ -130,16 +167,38 @@ const MapContainer: React.FC<MapContainerProps> = ({
         )}
         <MapController center={center} zoom={zoom} />
         
-        {/* Render tracks with white outline */}
-        {tracks.map((track) => (
+        {/* Ordenar las vías para que la vía seleccionada aparezca al final (encima) */}
+        {[...tracks]
+          .sort((a, b) => {
+            // Si la vía A es la seleccionada, ponerla al final (encima)
+            if (a.id === selectedTrackId) return 1;
+            // Si la vía B es la seleccionada, ponerla al final (encima)
+            if (b.id === selectedTrackId) return -1;
+            // Mantener el orden original para las demás vías
+            return 0;
+          })
+          .map((track) => (
           <div key={track.id} style={{ display: 'contents' }}>
+            {/* Efecto de resplandor para la vía seleccionada */}
+            {track.id === selectedTrackId && (
+              <Polyline
+                positions={track.path.map(p => [p.lat, p.lng])}
+                pathOptions={{ 
+                  color: 'white',
+                  weight: 14,
+                  opacity: 0.5,
+                  className: 'track-glow-effect'
+                }}
+              />
+            )}
+            
             {/* White outline layer */}
             <Polyline
               positions={track.path.map(p => [p.lat, p.lng])}
               pathOptions={{ 
                 color: 'white',
-                weight: track.id === currentTrackId ? 8 : 6,
-                opacity: 0.8
+                weight: track.id === selectedTrackId ? 10 : track.id === currentTrackId ? 8 : 6,
+                opacity: track.id === selectedTrackId ? 1 : 0.8
               }}
               eventHandlers={{
                 click: () => handleTrackClick(track.id)
@@ -150,8 +209,8 @@ const MapContainer: React.FC<MapContainerProps> = ({
               positions={track.path.map(p => [p.lat, p.lng])}
               pathOptions={{ 
                 color: track.color,
-                weight: track.id === currentTrackId ? 6 : 4,
-                opacity: track.id === currentTrackId ? 1 : 0.9
+                weight: track.id === selectedTrackId ? 8 : track.id === currentTrackId ? 6 : 4,
+                opacity: track.id === selectedTrackId ? 1 : track.id === currentTrackId ? 1 : 0.9
               }}
               eventHandlers={{
                 click: () => handleTrackClick(track.id)
@@ -174,6 +233,7 @@ const MapContainer: React.FC<MapContainerProps> = ({
               position={[station.position.lat, station.position.lng]}
               onClick={() => handleStationClick(station)}
               waitingPassengers={stationPassengers}
+              isPersonalStation={station.id === personalStationId} // Añadir propiedad isPersonalStation
             />
           );
         })}
@@ -200,6 +260,8 @@ const MapContainer: React.FC<MapContainerProps> = ({
           difficulty={difficulty}
           currentLevel={currentLevel}
           trainCapacity={trainCapacity}
+          gameStarted={gameStarted} // Pasar el estado del juego
+          canGeneratePassengers={canGeneratePassengers} // Pasar si se pueden generar pasajeros
         />
       </LeafletMap>
       
@@ -241,6 +303,8 @@ interface PassengerSystemControllerProps {
     maxPassengers: number;
   };
   trainCapacity?: number;
+  gameStarted: boolean; // Añadir propiedad para controlar si el juego ha comenzado
+  canGeneratePassengers: boolean; // Añadir propiedad para controlar si se pueden generar pasajeros
 }
 
 const PassengerSystemController: React.FC<PassengerSystemControllerProps> = ({
@@ -255,14 +319,25 @@ const PassengerSystemController: React.FC<PassengerSystemControllerProps> = ({
   setActivePassengers,
   difficulty,
   currentLevel,
-  trainCapacity = 4
+  trainCapacity = 4,
+  gameStarted = false, // Valor por defecto
+  canGeneratePassengers = false // Valor por defecto
 }) => {
   const map = useMap();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameRef = useRef<number | null>(null);
   
-  // Generar pasajeros cada 30 segundos
+  // Generar pasajeros cada 30 segundos, pero solo si el juego ha comenzado
   useEffect(() => {
+    // Si el juego no ha comenzado o no se pueden generar pasajeros, no hacer nada
+    if (!gameStarted || !canGeneratePassengers) {
+      // Limpiar los pasajeros existentes si hay alguno
+      if (activePassengers.length > 0) {
+        setActivePassengers([]);
+      }
+      return;
+    }
+    
     // Inicializar estaciones con canGenerate si no está definido
     stations.forEach(station => {
       if (station.canGenerate === undefined) {
@@ -271,57 +346,71 @@ const PassengerSystemController: React.FC<PassengerSystemControllerProps> = ({
     });
     
     const generatePassengers = () => {
+      // Si el juego no ha comenzado o no se pueden generar pasajeros, no generar
+      if (!gameStarted || !canGeneratePassengers) {
+        return;
+      }
+      
       const newPassengers: Passenger[] = [];
       
-      stations.forEach(station => {
-        if (station.canGenerate) {
-          // Generar entre 1 y 6 pasajeros por estación
-          const passengerCount = Math.floor(Math.random() * 6) + 1;
+      // Seleccionar solo algunas estaciones para generar pasajeros (más realista)
+      const stationsToGenerate = stations.filter(station => {
+        if (!station.canGenerate) return false;
+        // Solo generar en algunas estaciones cada vez (30% de probabilidad)
+        return Math.random() < 0.3;
+      });
+      
+      stationsToGenerate.forEach(station => {
+        // Generar entre 1 y 4 pasajeros por estación (reducido para ser más realista)
+        const passengerCount = Math.floor(Math.random() * 4) + 1;
+        
+        for (let i = 0; i < passengerCount; i++) {
+          // Encontrar una estación de destino aleatoria diferente del origen
+          const availableDestinations = stations.filter(s => s.id !== station.id);
+          if (availableDestinations.length === 0) continue;
           
-          for (let i = 0; i < passengerCount; i++) {
-            // Encontrar una estación de destino aleatoria diferente del origen
-            const availableDestinations = stations.filter(s => s.id !== station.id);
-            if (availableDestinations.length === 0) continue;
-            
-            const destination = availableDestinations[Math.floor(Math.random() * availableDestinations.length)];
-            
-            // Crear offset aleatorio dentro de un radio de 5px
-            const offsetX = (Math.random() * 10 - 5);
-            const offsetY = (Math.random() * 10 - 5);
-            const animationOffset = Math.random() * Math.PI * 2; // Punto de inicio aleatorio para la animación
-            
-            // Crear pasajero con posición offset
-            const passenger: Passenger = {
-              id: `passenger-${station.id}-${Date.now()}-${i}`,
-              origin: station,
-              destination,
-              position: {
-                lat: station.position.lat,
-                lng: station.position.lng
-              },
-              createdAt: Date.now(),
-              isPickedUp: false,
-              offsetX,
-              offsetY,
-              animationOffset
-            };
-            
-            newPassengers.push(passenger);
-          }
+          const destination = availableDestinations[Math.floor(Math.random() * availableDestinations.length)];
+          
+          // Crear offset aleatorio dentro de un radio de 5px
+          const offsetX = (Math.random() * 10 - 5);
+          const offsetY = (Math.random() * 10 - 5);
+          const animationOffset = Math.random() * Math.PI * 2; // Punto de inicio aleatorio para la animación
+          
+          // Crear pasajero con posición offset
+          const passenger: Passenger = {
+            id: `passenger-${station.id}-${Date.now()}-${i}`,
+            origin: station,
+            destination,
+            position: {
+              lat: station.position.lat,
+              lng: station.position.lng
+            },
+            createdAt: Date.now(),
+            isPickedUp: false,
+            offsetX,
+            offsetY,
+            animationOffset
+          };
+          
+          newPassengers.push(passenger);
         }
       });
       
       setActivePassengers(prev => [...prev, ...newPassengers]);
     };
     
-    // Generar pasajeros iniciales
-    generatePassengers();
-    
+    // NO generar pasajeros iniciales automáticamente
     // Configurar intervalo para generar pasajeros
     const intervalId = setInterval(generatePassengers, 30000);
     
-    return () => clearInterval(intervalId);
-  }, [stations, setActivePassengers]);
+    // Generar el primer lote de pasajeros después de un breve retraso para que sea gradual
+    const initialDelay = setTimeout(generatePassengers, 2000);
+    
+    return () => {
+      clearInterval(intervalId);
+      clearTimeout(initialDelay);
+    };
+  }, [stations, setActivePassengers, gameStarted, canGeneratePassengers, activePassengers.length]);
 
   // Manejar recogida, entrega y expiración de pasajeros
   useEffect(() => {

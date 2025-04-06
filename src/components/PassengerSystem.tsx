@@ -39,6 +39,8 @@ interface PassengerSystemProps {
     maxPassengers: number;
   };
   trainCapacity?: number;
+  gameStarted: boolean; // Añadir propiedad para controlar si el juego ha comenzado
+  canGeneratePassengers: boolean; // Añadir propiedad para controlar si se pueden generar pasajeros
 }
 
 const PassengerSystem: React.FC<PassengerSystemProps> = ({
@@ -51,7 +53,9 @@ const PassengerSystem: React.FC<PassengerSystemProps> = ({
   pickedUpPassengers,
   difficulty,
   currentLevel,
-  trainCapacity = 4 // Capacidad por defecto si no se especifica
+  trainCapacity = 4, // Capacidad por defecto si no se especifica
+  gameStarted = false, // Valor por defecto
+  canGeneratePassengers = false // Valor por defecto
 }) => {
   const [passengers, setPassengers] = useState<Passenger[]>([]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -109,12 +113,22 @@ const PassengerSystem: React.FC<PassengerSystemProps> = ({
   
   // Generate passengers based on difficulty and level settings
   useEffect(() => {
+    // Si el juego no ha comenzado o no se pueden generar pasajeros, no hacer nada
+    if (!gameStarted || !canGeneratePassengers) {
+      return;
+    }
+    
     // Reinicializar las estaciones que pueden generar pasajeros según dificultad
     stations.forEach(station => {
       station.canGenerate = Math.random() < currentSettings.stationProbability;
     });
     
     const generatePassengers = () => {
+      // Si el juego no ha comenzado o no se pueden generar pasajeros, no generar
+      if (!gameStarted || !canGeneratePassengers) {
+        return;
+      }
+      
       // Si hay demasiados pasajeros activos, no generar más
       // Usar el máximo de pasajeros del nivel o la configuración base
       const maxTotalPassengers = currentSettings.maxTotalPassengers;
@@ -126,51 +140,54 @@ const PassengerSystem: React.FC<PassengerSystemProps> = ({
       
       const newPassengers: Passenger[] = [];
       
-      stations.forEach(station => {
-        if (station.canGenerate) {
-          // Generar pasajeros según dificultad
-          const passengerCount = Math.floor(Math.random() * currentSettings.maxPassengersPerStation) + 1;
+      // Seleccionar solo algunas estaciones para generar pasajeros (más realista)
+      const stationsToGenerate = stations.filter(station => {
+        if (!station.canGenerate) return false;
+        // Solo generar en algunas estaciones cada vez (30% de probabilidad)
+        return Math.random() < 0.3;
+      });
+      
+      stationsToGenerate.forEach(station => {
+        // Generar pasajeros según dificultad
+        const passengerCount = Math.floor(Math.random() * currentSettings.maxPassengersPerStation) + 1;
+        
+        for (let i = 0; i < passengerCount; i++) {
+          // Encontrar una estación de destino diferente al origen
+          const availableDestinations = stations.filter(s => s.id !== station.id);
+          if (availableDestinations.length === 0) continue;
           
-          for (let i = 0; i < passengerCount; i++) {
-            // Encontrar una estación de destino diferente al origen
-            const availableDestinations = stations.filter(s => s.id !== station.id);
-            if (availableDestinations.length === 0) continue;
-            
-            const destination = availableDestinations[Math.floor(Math.random() * availableDestinations.length)];
-            
-            // Crear offset aleatorio dentro de un radio de 5px
-            const offsetX = (Math.random() * 10 - 5);
-            const offsetY = (Math.random() * 10 - 5);
-            const animationOffset = Math.random() * Math.PI * 2; // Punto de inicio aleatorio para la animación
-            
-            // Crear pasajero con posición desplazada
-            const passenger: Passenger = {
-              id: `passenger-${station.id}-${Date.now()}-${i}`,
-              origin: station,
-              destination,
-              position: {
-                lat: station.position.lat,
-                lng: station.position.lng
-              },
-              createdAt: Date.now(),
-              isPickedUp: false,
-              offsetX,
-              offsetY,
-              animationOffset
-            };
-            
-            newPassengers.push(passenger);
-          }
+          const destination = availableDestinations[Math.floor(Math.random() * availableDestinations.length)];
+          
+          // Crear offset aleatorio dentro de un radio de 5px
+          const offsetX = (Math.random() * 10 - 5);
+          const offsetY = (Math.random() * 10 - 5);
+          const animationOffset = Math.random() * Math.PI * 2; // Punto de inicio aleatorio para la animación
+          
+          // Crear pasajero con posición desplazada
+          const passenger: Passenger = {
+            id: `passenger-${station.id}-${Date.now()}-${i}`,
+            origin: station,
+            destination,
+            position: {
+              lat: station.position.lat,
+              lng: station.position.lng
+            },
+            createdAt: Date.now(),
+            isPickedUp: false,
+            offsetX,
+            offsetY,
+            animationOffset
+          };
+          
+          newPassengers.push(passenger);
         }
       });
       
       setPassengers(prev => [...prev, ...newPassengers]);
     };
     
-    // Generar pasajeros iniciales
-    generatePassengers();
-    
-    // Configurar intervalo para generar pasajeros según dificultad
+    // NO generar pasajeros iniciales automáticamente
+    // Solo configurar el intervalo para generarlos periódicamente
     const intervalId = setInterval(generatePassengers, currentSettings.generationInterval);
     
     // Actualizar la posición de los pasajeros cada 100ms para animación fluida
@@ -197,7 +214,7 @@ const PassengerSystem: React.FC<PassengerSystemProps> = ({
       clearInterval(intervalId);
       clearInterval(updateInterval);
     };
-  }, [stations, difficulty, currentSettings]);
+  }, [stations, difficulty, currentSettings, gameStarted, canGeneratePassengers]);
 
   // Handle passenger pickup, delivery, and expiration
   useEffect(() => {

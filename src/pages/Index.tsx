@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import TrainGame from '@/components/TrainGame';
 import MainMenu from '@/components/MainMenu';
 import { Coordinates, DEFAULT_COORDINATES } from '@/lib/mapUtils';
+import { GameProvider } from '@/contexts/GameContext';
 import '../styles/animations.css';
 
 const Index = () => {
@@ -21,7 +22,9 @@ const Index = () => {
       {!showGame ? (
         <MainMenu onStartGame={handleStartGame} />
       ) : (
-        <TrainGame initialCoordinates={startCoordinates} />
+        <GameProvider>
+          <TrainGame initialCoordinates={startCoordinates} />
+        </GameProvider>
       )}
     </>
   );

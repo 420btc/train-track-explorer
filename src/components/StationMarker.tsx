@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Marker, Tooltip } from 'react-leaflet';
 import L from 'leaflet';
@@ -20,9 +19,16 @@ interface StationMarkerProps {
   station: Station;
   onClick: (station: Station) => void;
   waitingPassengers?: Passenger[];
+  isPersonalStation?: boolean; // Nueva propiedad para identificar la estación personal
 }
 
-const StationMarker: React.FC<StationMarkerProps> = ({ position, station, onClick, waitingPassengers = [] }) => {
+const StationMarker: React.FC<StationMarkerProps> = ({ position, station, onClick, waitingPassengers = [], isPersonalStation = false }) => {
+  // Usar useEffect para la depuración
+  useEffect(() => {
+    if (isPersonalStation) {
+      console.log(`ESTACIÓN PERSONAL DETECTADA: ${station.name} (ID: ${station.id})`);
+    }
+  }, [isPersonalStation, station.id, station.name]);
   // Usar useRef para evitar actualizaciones innecesarias
   const hasTriedFetch = React.useRef(false);
   
@@ -57,6 +63,12 @@ const StationMarker: React.FC<StationMarkerProps> = ({ position, station, onClic
   
   // Determinar el color de la estación basado en la cantidad de pasajeros y su estado
   const getStationColor = () => {
+    // La estación personal siempre se maneja directamente en el HTML con estilo inline
+    // para asegurar que siempre sea dorada
+    if (isPersonalStation) {
+      return '';
+    }
+
     if (waitingPassengers.length === 0) {
       return 'bg-gray-500'; // Gris si no hay pasajeros
     }
@@ -95,24 +107,63 @@ const StationMarker: React.FC<StationMarkerProps> = ({ position, station, onClic
       return `bg-green-${Math.round(intensity / 10) * 100}`;
     }
   };
-  
+
   // Obtener el color de la estación
   const stationColor = getStationColor();
+
+  // Determinar el tamaño de la estación - Estación personal mucho más grande
+  const stationSize = isPersonalStation 
+    ? 22 // Estación personal significativamente más grande
+    : 12 + Math.min(6, waitingPassengers.length * 1.5); // Estaciones normales
+
+  // Crear un icono personalizado para la estación
+  let stationIcon;
   
-  // Determinar el tamaño de la estación basado en la cantidad de pasajeros
-  const stationSize = 12 + Math.min(6, waitingPassengers.length * 1.5); // Aumentar tamaño según pasajeros, máximo +6px
-  
-  // Create a custom icon for stations
-  const stationIcon = L.divIcon({
-    html: `
-      <div class="${stationColor} border border-black rounded-full w-full h-full flex items-center justify-center shadow-md">
-        ${waitingPassengers.length > 0 ? `<span class="text-[8px] text-white font-bold">${waitingPassengers.length}</span>` : ''}
-      </div>
-    `,
-    className: 'station-marker',
-    iconSize: [stationSize, stationSize],
-    iconAnchor: [stationSize/2, stationSize/2],
-  });
+  // Forzar estilo para estación personal (siempre dorada)
+  if (isPersonalStation) {
+    console.log(`Creando icono para estación personal: ${station.name}`);
+    stationIcon = L.divIcon({
+      html: `
+        <div style="
+          background-color: #D4AF37 !important; 
+          border: 4px solid black;
+          border-radius: 50%;
+          width: 100%;
+          height: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 0 0 3px white, 0 0 10px rgba(0,0,0,0.8);
+        ">
+          ${waitingPassengers.length > 0 ? `<span style="font-size: 10px; color: black; font-weight: bold;">${waitingPassengers.length}</span>` : ''}
+        </div>
+      `,
+      className: 'personal-station-marker',
+      iconSize: [25, 25], // Tamaño fijo más grande para la estación personal
+      iconAnchor: [12.5, 12.5],
+    });
+  } else {
+    // Estación normal
+    stationIcon = L.divIcon({
+      html: `
+        <div class="${stationColor}" style="
+          border: 1px solid black;
+          border-radius: 50%;
+          width: 100%;
+          height: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 0 5px rgba(0,0,0,0.3);
+        ">
+          ${waitingPassengers.length > 0 ? `<span style="font-size: 8px; color: white; font-weight: bold;">${waitingPassengers.length}</span>` : ''}
+        </div>
+      `,
+      className: 'station-marker',
+      iconSize: [stationSize, stationSize],
+      iconAnchor: [stationSize/2, stationSize/2],
+    });
+  }
 
   // Calcular tiempo restante para el pasajero más próximo a expirar
   const calculateTimeLeft = () => {
