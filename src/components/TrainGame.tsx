@@ -77,8 +77,7 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
   // Estado para el modo de exploración completa (recorrer todas las vías)
   const [exploreAllMode, setExploreAllMode] = useState<boolean>(false);
   
-  // Estados para dificultad
-  const [difficulty, setDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
+  // La dificultad ahora se gestiona desde el contexto del juego
   
   // Estado para mostrar lista de pasajeros
   const [showPassengersList, setShowPassengersList] = useState<boolean>(false);
@@ -104,7 +103,7 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
   const [trainCapacity, setTrainCapacity] = useState<number>(8); // Capacidad inicial del tren (ajustable dinámicamente)
   
   // Estados para el juego - valores iniciales basados en el nivel actual
-  const [money, setMoney] = useState<number>(currentLevel?.initialMoney || 1000);
+  const [money, setMoney] = useState<number>(currentLevel?.initialMoney || 100);
   const [points, setPoints] = useState<number>(0);
   const [happiness, setHappiness] = useState<number>(currentLevel?.initialHappiness || 50);
   const [gameStarted, setGameStarted] = useState<boolean>(false);
@@ -131,7 +130,9 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
     startGame: startGameContext,
     setCanGeneratePassengers,
     stations: contextStations,
-    setPersonalStationId: setPersonalStationIdContext
+    setPersonalStationId: setPersonalStationIdContext,
+    difficulty,
+    setDifficulty
   } = gameContext;
 
   // Función para establecer la estación personal
@@ -705,11 +706,20 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
         setTrainPosition(selectedTrack.path[0]);
         setIsReversed(false);
       }
-      toast.success('Piloto automático activado');
+      
+      // Mostrar información sobre el modo automático inteligente
+      const pasajerosPendientes = activePassengers.filter(p => !p.isPickedUp).length;
+      const pasajerosRecogidos = pickedUpPassengers.length;
+      
+      if (pasajerosPendientes > 0 || pasajerosRecogidos > 0) {
+        toast.success(`Piloto automático activado: ${pasajerosPendientes} pasajeros esperando, ${pasajerosRecogidos} en el tren`);
+      } else {
+        toast.success('Piloto automático activado: Esperando nuevos pasajeros');
+      }
     } else {
       toast.info('Piloto automático desactivado');
     }
-  }, [autoMode, selectedTrack, trainMoving]);
+  }, [autoMode, selectedTrack, trainMoving, activePassengers, pickedUpPassengers]);
   
   // Función para activar/desactivar el modo de exploración completa
   const toggleExploreAllMode = useCallback(() => {
@@ -785,25 +795,38 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
     // Calcular recompensa
     const currentTime = Date.now();
     const timeTaken = currentTime - passenger.createdAt;
-    const baseReward = 50; // $50 base
     const basePoints = 10; // 10 puntos base
     
+    // Tiempo límite para entrega (3 minutos = 180000ms)
+    const timeLimit = 180000;
+    
+    // Recompensa monetaria y puntos
+    let moneyReward = 0;
     let bonusPoints = 0;
     let bonusText = '';
+    let timeText = '';
     
-    // Bono por entrega rápida (menos de 60 segundos)
-    if (timeTaken < 60000) {
-      bonusPoints = 20;
-      bonusText = ' +20 puntos por entrega rápida!';
+    // Solo dar 1€ si se entrega dentro del tiempo límite
+    if (timeTaken <= timeLimit) {
+      moneyReward = 1; // 1€ por pasajero entregado a tiempo
+      timeText = ' (a tiempo)';
+      
+      // Bono adicional por entrega rápida (menos de 60 segundos)
+      if (timeTaken < 60000) {
+        bonusPoints = 20;
+        bonusText = ' +20 puntos por entrega rápida!';
+      }
+    } else {
+      timeText = ' (fuera de tiempo)';
     }
     
     // Actualizar dinero y puntos
-    setMoney(prev => prev + baseReward);
+    setMoney(prev => prev + moneyReward);
     setPoints(prev => prev + basePoints + bonusPoints);
     
     // Mostrar notificación toast solo a velocidades bajas o medias para evitar spam
     if (trainSpeed < 70) {
-      toast.success(`Pasajero entregado en ${passenger.destination.name}. +$${baseReward}, +${basePoints + bonusPoints} puntos${bonusText}`);
+      toast.success(`Pasajero entregado en ${passenger.destination.name}${timeText}. +$${moneyReward}, +${basePoints + bonusPoints} puntos${bonusText}`);
     }
     
     // Acumular pasajeros para notificaciones agrupadas
@@ -823,7 +846,7 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
     }
     
     // Verificar si se ha alcanzado algún hito
-    if (points + basePoints + bonusPoints >= 1000 || money + baseReward >= 5000) {
+    if (points + basePoints + bonusPoints >= 100 || money + moneyReward >= 500) {
       // Reiniciar canGenerate para todas las estaciones
       setStations(prev => prev.map(station => ({
         ...station,
@@ -1080,10 +1103,21 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
         toast.info("El tren ha llegado al inicio de la vía y no hay conexión disponible");
       }
       
-      // Si estamos en modo automático, desactivarlo
+      // Si estamos en modo automático, cambiar de dirección automáticamente
       if (autoMode) {
-        setAutoMode(false);
-        toast.info("Piloto automático desactivado: No se encontraron más vías");
+        // Cambiar la dirección del tren
+        setIsReversed(!isReversed);
+        toast.info("Cambiando dirección automáticamente");
+        
+        // Ajustar el índice para que el tren comience a moverse en la dirección opuesta
+        if (isAtEnd) {
+          setCurrentPathIndex(selectedTrack.path.length - 2);
+          setTrainPosition(selectedTrack.path[selectedTrack.path.length - 2]);
+        } else {
+          setCurrentPathIndex(1);
+          setTrainPosition(selectedTrack.path[1]);
+        }
+        return;
       }
       
       return;
@@ -1094,7 +1128,147 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
     setTrainPosition(selectedTrack.path[nextIndex]);
   }, [selectedTrack, currentPathIndex, isReversed, tracks, autoMode]);
   
-  // Efecto para el modo automático
+  // Función para calcular la distancia entre dos puntos geográficos (haversine)
+  const calculateHaversineDistance = useCallback((lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 6371; // Radio de la Tierra en km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+  }, []);
+  
+  // Función para encontrar la mejor estación para recoger pasajeros
+  const findBestStationToPickup = useCallback(() => {
+    if (!stations || stations.length === 0 || !trainPosition) return null;
+    
+    // Obtener todas las estaciones con pasajeros esperando
+    const stationsWithPassengers = stations.filter(station => {
+      const waitingPassengers = activePassengers.filter(p => 
+        !p.isPickedUp && p.origin.id === station.id
+      );
+      return waitingPassengers.length > 0;
+    });
+    
+    if (stationsWithPassengers.length === 0) return null;
+    
+    // Encontrar la estación más cercana con pasajeros
+    let closestStation = null;
+    let minDistance = Infinity;
+    
+    stationsWithPassengers.forEach(station => {
+      const distance = calculateHaversineDistance(
+        trainPosition.lat, 
+        trainPosition.lng, 
+        station.position.lat, 
+        station.position.lng
+      );
+      
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestStation = station;
+      }
+    });
+    
+    return closestStation;
+  }, [stations, trainPosition, activePassengers]);
+  
+  // Función para encontrar la mejor vía para llegar a una estación
+  const findBestTrackToStation = useCallback((targetStation: Station) => {
+    if (!targetStation || !tracks || tracks.length === 0 || !trainPosition) return null;
+    
+    // Encontrar la vía más cercana a la estación objetivo
+    let closestTrack = null;
+    let minDistance = Infinity;
+    
+    tracks.forEach(track => {
+      // Calcular la distancia desde cada punto de la vía a la estación
+      track.path.forEach(point => {
+        const distance = calculateHaversineDistance(
+          point.lat,
+          point.lng,
+          targetStation.position.lat,
+          targetStation.position.lng
+        );
+        
+        if (distance < minDistance) {
+          minDistance = distance;
+          closestTrack = track;
+        }
+      });
+    });
+    
+    return closestTrack;
+  }, [tracks, trainPosition]);
+  
+  // Función para encontrar una ruta entre vías conectadas
+  const findPathBetweenTracks = useCallback((startTrack: TrackSegment, targetTrack: TrackSegment): TrackSegment[] | null => {
+    if (!startTrack || !targetTrack || !tracks || tracks.length === 0) return null;
+    
+    // Si es la misma vía, devolver solo esa vía
+    if (startTrack.id === targetTrack.id) return [startTrack];
+    
+    // Implementar un algoritmo de búsqueda en anchura (BFS) para encontrar la ruta
+    const queue: { track: TrackSegment, path: TrackSegment[] }[] = [];
+    const visited = new Set<string>();
+    
+    // Añadir la vía inicial a la cola
+    queue.push({ track: startTrack, path: [startTrack] });
+    visited.add(startTrack.id);
+    
+    while (queue.length > 0) {
+      const { track, path } = queue.shift()!;
+      
+      // Comprobar conexiones desde el final de la vía
+      const connectingFromEnd = findConnectingTrack(track, tracks, true);
+      if (connectingFromEnd) {
+        const nextTrack = tracks.find(t => t.id === connectingFromEnd.trackId);
+        if (nextTrack && !visited.has(nextTrack.id)) {
+          const newPath = [...path, nextTrack];
+          
+          // Si hemos encontrado la vía objetivo, devolver la ruta
+          if (nextTrack.id === targetTrack.id) {
+            return newPath;
+          }
+          
+          // Añadir la nueva vía a la cola
+          queue.push({ track: nextTrack, path: newPath });
+          visited.add(nextTrack.id);
+        }
+      }
+      
+      // Comprobar conexiones desde el inicio de la vía
+      const connectingFromStart = findConnectingTrack(track, tracks, false);
+      if (connectingFromStart) {
+        const nextTrack = tracks.find(t => t.id === connectingFromStart.trackId);
+        if (nextTrack && !visited.has(nextTrack.id)) {
+          const newPath = [...path, nextTrack];
+          
+          // Si hemos encontrado la vía objetivo, devolver la ruta
+          if (nextTrack.id === targetTrack.id) {
+            return newPath;
+          }
+          
+          // Añadir la nueva vía a la cola
+          queue.push({ track: nextTrack, path: newPath });
+          visited.add(nextTrack.id);
+        }
+      }
+    }
+    
+    // Si no se encuentra una ruta, devolver null
+    return null;
+  }, [tracks]);
+  
+  // Estado para almacenar la ruta actual en modo automático
+  const [autoModePath, setAutoModePath] = useState<TrackSegment[]>([]);
+  const [autoModePathIndex, setAutoModePathIndex] = useState<number>(0);
+  const [autoModeTargetStation, setAutoModeTargetStation] = useState<Station | null>(null);
+  
+  // Efecto para el modo automático inteligente
   useEffect(() => {
     if (!autoMode) return;
     
@@ -1110,25 +1284,175 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
         return;
       }
       
-      // Mover el tren un paso adelante
-      handleMoveTrainClick();
+      // Si tenemos una ruta en progreso, seguirla
+      if (autoModePath.length > 0 && autoModePathIndex < autoModePath.length) {
+        // Si estamos en la vía actual de la ruta, mover el tren a lo largo de ella
+        if (selectedTrack.id === autoModePath[autoModePathIndex].id) {
+          // Verificar si hemos llegado al final de la vía actual
+          const isAtEnd = !isReversed && currentPathIndex >= selectedTrack.path.length - 1;
+          const isAtStart = isReversed && currentPathIndex <= 0;
+          
+          if (isAtEnd || isAtStart) {
+            // Hemos llegado al final de la vía actual, pasar a la siguiente vía en la ruta
+            if (autoModePathIndex < autoModePath.length - 1) {
+              // Buscar la conexión a la siguiente vía
+              const nextTrack = autoModePath[autoModePathIndex + 1];
+              const connectingInfo = findConnectingTrack(selectedTrack, tracks, isAtEnd);
+              
+              if (connectingInfo && connectingInfo.trackId === nextTrack.id) {
+                // Cambiar a la siguiente vía en la ruta
+                setSelectedTrack(nextTrack);
+                setCurrentTrackId(nextTrack.id);
+                
+                // Establecer el índice inicial en la nueva vía
+                if (connectingInfo.startIndex === 0) {
+                  // Si debemos empezar desde el inicio de la vía
+                  setCurrentPathIndex(0);
+                  setIsReversed(connectingInfo.reversed);
+                  setTrainPosition(nextTrack.path[0]);
+                } else {
+                  // Si debemos empezar desde el final de la vía
+                  setCurrentPathIndex(nextTrack.path.length - 1);
+                  setIsReversed(connectingInfo.reversed);
+                  setTrainPosition(nextTrack.path[nextTrack.path.length - 1]);
+                }
+                
+                // Actualizar el índice de la ruta
+                setAutoModePathIndex(autoModePathIndex + 1);
+                
+                // Mostrar mensaje de progreso
+                toast.success(`Cambiando a vía ${nextTrack.id} (${autoModePathIndex + 1}/${autoModePath.length - 1})`);
+              } else {
+                // No se encontró una conexión directa, recalcular la ruta
+                setAutoModePath([]);
+                setAutoModePathIndex(0);
+              }
+            } else {
+              // Hemos llegado al final de la ruta
+              setAutoModePath([]);
+              setAutoModePathIndex(0);
+              
+              // Verificar si hemos llegado a la estación objetivo
+              if (autoModeTargetStation) {
+                toast.success(`Llegamos a la estación ${autoModeTargetStation.name}`);
+                setAutoModeTargetStation(null);
+              }
+            }
+          } else {
+            // Seguir moviendo el tren a lo largo de la vía actual
+            handleMoveTrainClick();
+          }
+        } else {
+          // Estamos en una vía diferente a la de la ruta, recalcular
+          setAutoModePath([]);
+          setAutoModePathIndex(0);
+        }
+      } else {
+        // No tenemos una ruta en progreso, calcular una nueva
+        
+        // Verificar si hay pasajeros en el tren que necesitan ser entregados
+        if (pickedUpPassengers.length > 0) {
+          // Priorizar la entrega de pasajeros ya recogidos
+          const firstPassenger = pickedUpPassengers[0];
+          const destinationStation = firstPassenger.destination;
+          
+          // Buscar la mejor vía para llegar a la estación de destino
+          const bestTrackToDestination = findBestTrackToStation(destinationStation);
+          
+          if (bestTrackToDestination && bestTrackToDestination.id !== selectedTrack.id) {
+            // Buscar una ruta desde la vía actual hasta la vía objetivo
+            const path = findPathBetweenTracks(selectedTrack, bestTrackToDestination);
+            
+            if (path && path.length > 0) {
+              // Establecer la ruta y comenzar a seguirla
+              setAutoModePath(path);
+              setAutoModePathIndex(0);
+              setAutoModeTargetStation(destinationStation);
+              toast.info(`Modo automático: Ruta calculada a estación ${destinationStation.name} para entregar pasajero (${path.length} vías)`);
+            } else {
+              // No se encontró una ruta conectada, usar la mejor vía disponible
+              toast.warning(`No se encontró una ruta conectada a ${destinationStation.name}. Usando la mejor vía disponible.`);
+              setSelectedTrack(bestTrackToDestination);
+              setCurrentTrackId(bestTrackToDestination.id);
+              setCurrentPathIndex(0);
+              setTrainPosition(bestTrackToDestination.path[0]);
+              setIsReversed(false);
+            }
+          }
+        } else {
+          // Si no hay pasajeros en el tren, buscar la mejor estación para recoger pasajeros
+          const bestStation = findBestStationToPickup();
+          
+          if (bestStation) {
+            // Buscar la mejor vía para llegar a la estación
+            const bestTrackToStation = findBestTrackToStation(bestStation);
+            
+            if (bestTrackToStation && bestTrackToStation.id !== selectedTrack.id) {
+              // Buscar una ruta desde la vía actual hasta la vía objetivo
+              const path = findPathBetweenTracks(selectedTrack, bestTrackToStation);
+              
+              if (path && path.length > 0) {
+                // Establecer la ruta y comenzar a seguirla
+                setAutoModePath(path);
+                setAutoModePathIndex(0);
+                setAutoModeTargetStation(bestStation);
+                toast.info(`Modo automático: Ruta calculada a estación ${bestStation.name} para recoger pasajeros (${path.length} vías)`);
+              } else {
+                // No se encontró una ruta conectada, usar la mejor vía disponible
+                toast.warning(`No se encontró una ruta conectada a ${bestStation.name}. Usando la mejor vía disponible.`);
+                setSelectedTrack(bestTrackToStation);
+                setCurrentTrackId(bestTrackToStation.id);
+                setCurrentPathIndex(0);
+                setTrainPosition(bestTrackToStation.path[0]);
+                setIsReversed(false);
+              }
+            }
+          } else {
+            // No hay estaciones con pasajeros, simplemente mover el tren
+            handleMoveTrainClick();
+          }
+        }
+      }
+      
+      // Si no hay una ruta en progreso, mover el tren a lo largo de la vía seleccionada
+      if (autoModePath.length === 0) {
+        handleMoveTrainClick();
+      }
     }, interval);
     
-    return () => clearInterval(intervalId);
-  }, [autoMode, selectedTrack, handleMoveTrainClick, trainSpeed]);
+    return () => {
+      clearInterval(intervalId);
+      // Limpiar la ruta al desactivar el modo automático
+      setAutoModePath([]);
+      setAutoModePathIndex(0);
+      setAutoModeTargetStation(null);
+    };
+  }, [autoMode, selectedTrack, handleMoveTrainClick, trainSpeed, pickedUpPassengers, findBestStationToPickup, findBestTrackToStation, currentPathIndex, isReversed, tracks, autoModePath, autoModePathIndex, autoModeTargetStation, findPathBetweenTracks]);
+
+  // Estado para la vía resaltada (solo para visualización)
+  const [highlightedTrack, setHighlightedTrack] = useState<TrackSegment | null>(null);
 
   // Manejar la selección de una vía
   const handleTrackSelect = useCallback((trackId: string) => {
     const track = tracks.find(t => t.id === trackId);
     if (track) {
-      setSelectedTrack(track);
-      setCurrentPathIndex(0);
-      setTrainPosition(track.path[0]);
-      setCurrentTrackId(track.id);
-      setIsReversed(false); // Reiniciar dirección al seleccionar una nueva vía
-      toast.success(`Vía seleccionada: ${track.id}`);
+      // Siempre resaltar la vía seleccionada para visualización
+      setHighlightedTrack(track);
+      
+      // Solo cambiar la ruta del tren si no está en movimiento (ni automático ni manual)
+      if (!autoMode && !selectedTrack) {
+        setSelectedTrack(track);
+        setCurrentPathIndex(0);
+        setTrainPosition(track.path[0]);
+        setCurrentTrackId(track.id);
+        setIsReversed(false); // Reiniciar dirección al seleccionar una nueva vía
+        toast.success(`Tren colocado en vía: ${track.id}`);
+      } else {
+        // Solo mostrar un mensaje informativo
+        toast.info(`Visualizando vía: ${track.id}`);
+      }
     }
-  }, [tracks]);
+  }, [tracks, autoMode, selectedTrack]);
 
   // Efecto para manejar el inicio del juego
   useEffect(() => {
@@ -1304,6 +1628,8 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
                 gameStarted={gameStarted} // Pasar el estado del juego
                 canGeneratePassengers={canGeneratePassengers} // Pasar si se pueden generar pasajeros
                 personalStationId={personalStationId} // Pasar la estación personal
+                highlightedTrack={highlightedTrack} // Pasar la vía resaltada
+                autoMode={autoMode} // Pasar el estado del modo automático
               />
             </div>
             

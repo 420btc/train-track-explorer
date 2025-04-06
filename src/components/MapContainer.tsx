@@ -63,6 +63,8 @@ interface MapContainerProps {
   gameStarted?: boolean; // Añadir propiedad para controlar si el juego ha comenzado
   canGeneratePassengers?: boolean; // Añadir propiedad para controlar si se pueden generar pasajeros
   personalStationId?: string; // Nueva propiedad para identificar la estación personal
+  highlightedTrack?: TrackSegment | null; // Nueva propiedad para la vía resaltada
+  autoMode?: boolean; // Nueva propiedad para saber si el tren está en modo automático
 }
 
 const MapContainer: React.FC<MapContainerProps> = ({ 
@@ -89,7 +91,9 @@ const MapContainer: React.FC<MapContainerProps> = ({
   trainCapacity = 4,
   gameStarted = false,
   canGeneratePassengers = false,
-  personalStationId
+  personalStationId,
+  highlightedTrack = null,
+  autoMode = false
 }) => {
   // Usar useEffect para la depuración en lugar de hacerlo durante el renderizado
   useEffect(() => {
@@ -179,8 +183,8 @@ const MapContainer: React.FC<MapContainerProps> = ({
           })
           .map((track) => (
           <div key={track.id} style={{ display: 'contents' }}>
-            {/* Efecto de resplandor para la vía seleccionada */}
-            {track.id === selectedTrackId && (
+            {/* Efecto de resplandor para la vía seleccionada o resaltada */}
+            {(track.id === selectedTrackId || (highlightedTrack && track.id === highlightedTrack.id)) && (
               <Polyline
                 positions={track.path.map(p => [p.lat, p.lng])}
                 pathOptions={{ 
@@ -197,8 +201,8 @@ const MapContainer: React.FC<MapContainerProps> = ({
               positions={track.path.map(p => [p.lat, p.lng])}
               pathOptions={{ 
                 color: 'white',
-                weight: track.id === selectedTrackId ? 10 : track.id === currentTrackId ? 8 : 6,
-                opacity: track.id === selectedTrackId ? 1 : 0.8
+                weight: (track.id === selectedTrackId || (highlightedTrack && track.id === highlightedTrack.id)) ? 10 : track.id === currentTrackId ? 8 : 6,
+                opacity: (track.id === selectedTrackId || (highlightedTrack && track.id === highlightedTrack.id)) ? 1 : 0.8
               }}
               eventHandlers={{
                 click: () => handleTrackClick(track.id)
@@ -209,8 +213,8 @@ const MapContainer: React.FC<MapContainerProps> = ({
               positions={track.path.map(p => [p.lat, p.lng])}
               pathOptions={{ 
                 color: track.color,
-                weight: track.id === selectedTrackId ? 8 : track.id === currentTrackId ? 6 : 4,
-                opacity: track.id === selectedTrackId ? 1 : track.id === currentTrackId ? 1 : 0.9
+                weight: (track.id === selectedTrackId || (highlightedTrack && track.id === highlightedTrack.id)) ? 8 : track.id === currentTrackId ? 6 : 4,
+                opacity: (track.id === selectedTrackId || (highlightedTrack && track.id === highlightedTrack.id)) ? 1 : track.id === currentTrackId ? 1 : 0.9
               }}
               eventHandlers={{
                 click: () => handleTrackClick(track.id)
@@ -305,6 +309,7 @@ interface PassengerSystemControllerProps {
   trainCapacity?: number;
   gameStarted: boolean; // Añadir propiedad para controlar si el juego ha comenzado
   canGeneratePassengers: boolean; // Añadir propiedad para controlar si se pueden generar pasajeros
+  personalStationId?: string; // ID de la estación personal del jugador
 }
 
 const PassengerSystemController: React.FC<PassengerSystemControllerProps> = ({
@@ -321,7 +326,8 @@ const PassengerSystemController: React.FC<PassengerSystemControllerProps> = ({
   currentLevel,
   trainCapacity = 4,
   gameStarted = false, // Valor por defecto
-  canGeneratePassengers = false // Valor por defecto
+  canGeneratePassengers = false, // Valor por defecto
+  personalStationId // Estación personal
 }) => {
   const map = useMap();
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -345,40 +351,362 @@ const PassengerSystemController: React.FC<PassengerSystemControllerProps> = ({
       }
     });
     
+    // Variable para controlar si es la primera generación
+    const isFirstGeneration = { current: true };
+    
     const generatePassengers = () => {
       // Si el juego no ha comenzado o no se pueden generar pasajeros, no generar
       if (!gameStarted || !canGeneratePassengers) {
         return;
       }
       
-      const newPassengers: Passenger[] = [];
+      // Determinar si es la primera generación
+      const firstGen = isFirstGeneration.current;
+      if (firstGen) {
+        isFirstGeneration.current = false;
+      }
       
-      // Seleccionar solo algunas estaciones para generar pasajeros (más realista)
-      const stationsToGenerate = stations.filter(station => {
-        if (!station.canGenerate) return false;
-        // Solo generar en algunas estaciones cada vez (30% de probabilidad)
-        return Math.random() < 0.3;
+      // Definir límites máximos de pasajeros por estación según la dificultad
+      const maxPassengersPerStation = {
+        easy: 2,
+        medium: 3,
+        hard: 5
+      };
+      
+      // Contar pasajeros actuales por estación
+      const stationPassengerCount: Record<string, number> = {};
+      activePassengers.forEach(passenger => {
+        if (!passenger.isPickedUp) {
+          const stationId = passenger.origin.id;
+          stationPassengerCount[stationId] = (stationPassengerCount[stationId] || 0) + 1;
+        }
       });
       
-      stationsToGenerate.forEach(station => {
-        // Generar entre 1 y 4 pasajeros por estación (reducido para ser más realista)
-        const passengerCount = Math.floor(Math.random() * 4) + 1;
+      const newPassengers: Passenger[] = [];
+      
+      // Seleccionar solo algunas estaciones para generar pasajeros (probabilidad muy reducida)
+      const stationsToGenerate = stations.filter(station => {
+        // Si es la estación personal, no generar pasajeros
+        if (personalStationId && station.id === personalStationId) return false;
         
-        for (let i = 0; i < passengerCount; i++) {
+        // Si no puede generar pasajeros, saltar
+        if (!station.canGenerate) return false;
+        
+        // Verificar si la estación ya tiene el máximo de pasajeros según la dificultad
+        const currentCount = stationPassengerCount[station.id] || 0;
+        if (currentCount >= maxPassengersPerStation[difficulty]) return false;
+        
+        // Probabilidad muy baja de generar pasajeros (5% en fácil, 8% en medio, 10% en difícil)
+        const generationProbability = {
+          easy: 0.05,
+          medium: 0.08,
+          hard: 0.10
+        };
+        
+        return Math.random() < generationProbability[difficulty];
+      });
+      
+      // Limitar el número total de estaciones que generan pasajeros a la vez
+      const maxStationsToGenerate = {
+        easy: 1,
+        medium: 2,
+        hard: 3
+      };
+      
+      // Seleccionar estaciones para generar pasajeros
+      let selectedStations;
+      
+      if (firstGen) {
+        // En la primera generación, seleccionar más estaciones para garantizar pasajeros iniciales
+        // Pero asegurarse de que no sean demasiadas
+        const initialStationCount = Math.min(
+          Math.ceil(stations.length * 0.3), // 30% de las estaciones
+          maxStationsToGenerate[difficulty] * 2 // El doble del límite normal
+        );
+        selectedStations = stationsToGenerate.sort(() => Math.random() - 0.5)
+          .slice(0, initialStationCount);
+      } else {
+        // Generación normal
+        selectedStations = stationsToGenerate.sort(() => Math.random() - 0.5)
+          .slice(0, maxStationsToGenerate[difficulty]);
+      }
+      
+      selectedStations.forEach(station => {
+        // Verificar cuántos pasajeros ya hay en esta estación
+        const currentCount = stationPassengerCount[station.id] || 0;
+        const availableSlots = maxPassengersPerStation[difficulty] - currentCount;
+        
+        if (availableSlots <= 0) return; // No hay espacio para más pasajeros
+        
+        // Determinar cuántos pasajeros generar
+        let passengerCount;
+        
+        if (firstGen) {
+          // En la primera generación, mayor probabilidad de generar pasajeros
+          passengerCount = Math.random() < 0.7 ? 1 : 0; // 70% de probabilidad de generar 1 pasajero
+        } else {
+          // Generación normal con baja probabilidad
+          passengerCount = Math.random() < 0.3 ? 1 : 0; // 30% de probabilidad de generar 1 pasajero
+        }
+        
+        if (passengerCount === 0) return; // No generar pasajeros esta vez
+        
+        // Encontrar una estación de destino aleatoria diferente del origen
+        const availableDestinations = stations.filter(s => s.id !== station.id);
+        if (availableDestinations.length === 0) return;
+        
+        // Preferir la estación personal como destino si existe
+        let destination;
+        if (personalStationId) {
+          const personalStation = stations.find(s => s.id === personalStationId);
+          if (personalStation && Math.random() < 0.7) { // 70% de probabilidad
+            destination = personalStation;
+          } else {
+            destination = availableDestinations[Math.floor(Math.random() * availableDestinations.length)];
+          }
+        } else {
+          destination = availableDestinations[Math.floor(Math.random() * availableDestinations.length)];
+        }
+        
+        // Crear offset aleatorio dentro de un radio de 5px
+        const offsetX = (Math.random() * 10 - 5);
+        const offsetY = (Math.random() * 10 - 5);
+        const animationOffset = Math.random() * Math.PI * 2; // Punto de inicio aleatorio para la animación
+        
+        // Crear pasajero con posición offset
+        const passenger: Passenger = {
+          id: `passenger-${station.id}-${Date.now()}`,
+          origin: station,
+          destination,
+          position: {
+            lat: station.position.lat,
+            lng: station.position.lng
+          },
+          createdAt: Date.now(),
+          isPickedUp: false,
+          offsetX,
+          offsetY,
+          animationOffset
+        };
+        
+        newPassengers.push(passenger);
+        
+        // Actualizar el contador local para evitar generar demasiados pasajeros
+        stationPassengerCount[station.id] = (stationPassengerCount[station.id] || 0) + 1;
+      });
+      
+      // Añadir los nuevos pasajeros al estado
+      if (newPassengers.length > 0) {
+        setActivePassengers(prev => [...prev, ...newPassengers]);
+      }
+    };
+    
+    // Usar timeouts variables en lugar de intervalos fijos para una generación más realista
+    const timeoutRefs = { current: [] as ReturnType<typeof setTimeout>[] };
+    
+    // Función para programar la próxima generación con un intervalo aleatorio
+    const scheduleNextGeneration = () => {
+      // Intervalo base de 2-3 minutos (mucho más lento que antes)
+      const baseInterval = difficulty === 'easy' ? 180000 : difficulty === 'medium' ? 150000 : 120000;
+      const randomVariation = Math.floor(Math.random() * 60000); // Variación de hasta 1 minuto
+      const nextInterval = baseInterval + randomVariation;
+      
+      const timeoutId = setTimeout(() => {
+        generatePassengers();
+        
+        // Verificar si necesitamos generar pasajeros mínimos
+        setTimeout(() => {
+          ensureMinimumPassengers();
+        }, 5000); // Verificar 5 segundos después de la generación normal
+        
+        const nextTimeoutId = scheduleNextGeneration();
+        timeoutRefs.current.push(nextTimeoutId);
+      }, nextInterval);
+      
+      return timeoutId;
+    };
+    
+    // Función para garantizar un mínimo de pasajeros en las estaciones
+    const ensureMinimumPassengers = () => {
+      // Si ya hay suficientes pasajeros, no hacer nada
+      const currentPassengerCount = activePassengers.filter(p => !p.isPickedUp).length;
+      
+      if (currentPassengerCount >= 3) return; // Ya hay suficientes pasajeros
+      
+      // Determinar cuántos pasajeros necesitamos generar
+      const passengersToGenerate = 3 - currentPassengerCount;
+      
+      // Filtrar estaciones que pueden generar pasajeros
+      const availableStations = stations.filter(station => {
+        if (!station.canGenerate) return false;
+        if (personalStationId && station.id === personalStationId) return false;
+        
+        // Contar pasajeros actuales en esta estación
+        const stationPassengers = activePassengers.filter(p => 
+          !p.isPickedUp && p.origin.id === station.id
+        ).length;
+        
+        // Verificar si la estación ya tiene el máximo de pasajeros según la dificultad
+        const maxPassengersPerStation = {
+          easy: 2,
+          medium: 3,
+          hard: 5
+        };
+        
+        return stationPassengers < maxPassengersPerStation[difficulty];
+      });
+      
+      if (availableStations.length === 0) return; // No hay estaciones disponibles
+      
+      // Seleccionar estaciones aleatorias para generar pasajeros
+      const selectedStations = availableStations
+        .sort(() => Math.random() - 0.5)
+        .slice(0, Math.min(passengersToGenerate, availableStations.length));
+      
+      const newPassengers: Passenger[] = [];
+      
+      selectedStations.forEach(station => {
+        // Encontrar una estación de destino aleatoria diferente del origen
+        const availableDestinations = stations.filter(s => s.id !== station.id);
+        if (availableDestinations.length === 0) return;
+        
+        // Preferir la estación personal como destino si existe
+        let destination;
+        if (personalStationId) {
+          const personalStation = stations.find(s => s.id === personalStationId);
+          if (personalStation && Math.random() < 0.7) { // 70% de probabilidad
+            destination = personalStation;
+          } else {
+            destination = availableDestinations[Math.floor(Math.random() * availableDestinations.length)];
+          }
+        } else {
+          destination = availableDestinations[Math.floor(Math.random() * availableDestinations.length)];
+        }
+        
+        // Crear offset aleatorio dentro de un radio de 5px
+        const offsetX = (Math.random() * 10 - 5);
+        const offsetY = (Math.random() * 10 - 5);
+        const animationOffset = Math.random() * Math.PI * 2;
+        
+        // Crear pasajero con posición offset
+        const passenger: Passenger = {
+          id: `passenger-${station.id}-${Date.now()}-min`,
+          origin: station,
+          destination,
+          position: {
+            lat: station.position.lat,
+            lng: station.position.lng
+          },
+          createdAt: Date.now(),
+          isPickedUp: false,
+          offsetX,
+          offsetY,
+          animationOffset
+        };
+        
+        newPassengers.push(passenger);
+      });
+      
+      if (newPassengers.length > 0) {
+        setActivePassengers(prev => [...prev, ...newPassengers]);
+        console.log(`Generados ${newPassengers.length} pasajeros mínimos para asegurar jugabilidad`);
+      }
+    };
+    
+    // Generar el primer lote de pasajeros después de un breve retraso para que sea gradual (5 segundos)
+    const initialDelay = setTimeout(() => {
+      // Primera generación con menos pasajeros
+      generatePassengers();
+      
+      // Asegurar un mínimo de pasajeros
+      ensureMinimumPassengers();
+      
+      // Programar las siguientes generaciones con intervalos más largos
+      const firstScheduledTimeout = scheduleNextGeneration();
+      timeoutRefs.current.push(firstScheduledTimeout);
+    }, 5000);
+    
+    timeoutRefs.current.push(initialDelay);
+    
+    return () => {
+      // Limpiar todos los timeouts al desmontar
+      timeoutRefs.current.forEach(timeoutId => clearTimeout(timeoutId));
+    };
+  }, [stations, setActivePassengers, gameStarted, canGeneratePassengers, activePassengers.length, difficulty, personalStationId]);
+
+  // Efecto adicional para verificar periódicamente si hay suficientes pasajeros
+  useEffect(() => {
+    if (!gameStarted || !canGeneratePassengers) return;
+    
+    // Función para garantizar un mínimo de pasajeros en las estaciones
+    const checkAndEnsureMinimumPassengers = () => {
+      const currentPassengerCount = activePassengers.filter(p => !p.isPickedUp).length;
+      
+      // Si hay menos de 3 pasajeros, generar más
+      if (currentPassengerCount < 3) {
+        console.log(`Verificación periódica: Solo hay ${currentPassengerCount} pasajeros. Generando más...`);
+        
+        // Si ya hay suficientes pasajeros, no hacer nada
+        if (currentPassengerCount >= 3) return; // Ya hay suficientes pasajeros
+        
+        // Determinar cuántos pasajeros necesitamos generar
+        const passengersToGenerate = 3 - currentPassengerCount;
+        
+        // Filtrar estaciones que pueden generar pasajeros
+        const availableStations = stations.filter(station => {
+          if (!station.canGenerate) return false;
+          if (personalStationId && station.id === personalStationId) return false;
+          
+          // Contar pasajeros actuales en esta estación
+          const stationPassengers = activePassengers.filter(p => 
+            !p.isPickedUp && p.origin.id === station.id
+          ).length;
+          
+          // Verificar si la estación ya tiene el máximo de pasajeros según la dificultad
+          const maxPassengersPerStation = {
+            easy: 2,
+            medium: 3,
+            hard: 5
+          };
+          
+          return stationPassengers < maxPassengersPerStation[difficulty];
+        });
+        
+        if (availableStations.length === 0) return; // No hay estaciones disponibles
+        
+        // Seleccionar estaciones aleatorias para generar pasajeros
+        const selectedStations = availableStations
+          .sort(() => Math.random() - 0.5)
+          .slice(0, Math.min(passengersToGenerate, availableStations.length));
+        
+        const newPassengers: Passenger[] = [];
+        
+        selectedStations.forEach(station => {
           // Encontrar una estación de destino aleatoria diferente del origen
           const availableDestinations = stations.filter(s => s.id !== station.id);
-          if (availableDestinations.length === 0) continue;
+          if (availableDestinations.length === 0) return;
           
-          const destination = availableDestinations[Math.floor(Math.random() * availableDestinations.length)];
+          // Preferir la estación personal como destino si existe
+          let destination;
+          if (personalStationId) {
+            const personalStation = stations.find(s => s.id === personalStationId);
+            if (personalStation && Math.random() < 0.7) { // 70% de probabilidad
+              destination = personalStation;
+            } else {
+              destination = availableDestinations[Math.floor(Math.random() * availableDestinations.length)];
+            }
+          } else {
+            destination = availableDestinations[Math.floor(Math.random() * availableDestinations.length)];
+          }
           
           // Crear offset aleatorio dentro de un radio de 5px
           const offsetX = (Math.random() * 10 - 5);
           const offsetY = (Math.random() * 10 - 5);
-          const animationOffset = Math.random() * Math.PI * 2; // Punto de inicio aleatorio para la animación
+          const animationOffset = Math.random() * Math.PI * 2;
           
           // Crear pasajero con posición offset
           const passenger: Passenger = {
-            id: `passenger-${station.id}-${Date.now()}-${i}`,
+            id: `passenger-${station.id}-${Date.now()}-min-periodic`,
             origin: station,
             destination,
             position: {
@@ -393,25 +721,24 @@ const PassengerSystemController: React.FC<PassengerSystemControllerProps> = ({
           };
           
           newPassengers.push(passenger);
+        });
+        
+        if (newPassengers.length > 0) {
+          setActivePassengers(prev => [...prev, ...newPassengers]);
+          console.log(`Generados ${newPassengers.length} pasajeros mínimos periódicos para asegurar jugabilidad`);
         }
-      });
-      
-      setActivePassengers(prev => [...prev, ...newPassengers]);
+      }
     };
     
-    // NO generar pasajeros iniciales automáticamente
-    // Configurar intervalo para generar pasajeros
-    const intervalId = setInterval(generatePassengers, 30000);
+    // Verificar inmediatamente al iniciar
+    checkAndEnsureMinimumPassengers();
     
-    // Generar el primer lote de pasajeros después de un breve retraso para que sea gradual
-    const initialDelay = setTimeout(generatePassengers, 2000);
+    // Verificar cada minuto si hay suficientes pasajeros
+    const minimumPassengersInterval = setInterval(checkAndEnsureMinimumPassengers, 60000); // Verificar cada minuto
     
-    return () => {
-      clearInterval(intervalId);
-      clearTimeout(initialDelay);
-    };
-  }, [stations, setActivePassengers, gameStarted, canGeneratePassengers, activePassengers.length]);
-
+    return () => clearInterval(minimumPassengersInterval);
+  }, [gameStarted, canGeneratePassengers, activePassengers, stations, difficulty, personalStationId, setActivePassengers]);
+  
   // Manejar recogida, entrega y expiración de pasajeros
   useEffect(() => {
     const checkPassengerInteractions = () => {

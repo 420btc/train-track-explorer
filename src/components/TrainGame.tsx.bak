@@ -101,7 +101,7 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
   const [trainCapacity, setTrainCapacity] = useState<number>(8); // Capacidad inicial del tren (ajustable dinámicamente)
   
   // Estados para el juego - valores iniciales basados en el nivel actual
-  const [money, setMoney] = useState<number>(currentLevel?.initialMoney || 1000);
+  const [money, setMoney] = useState<number>(currentLevel?.initialMoney || 100);
   const [points, setPoints] = useState<number>(0);
   const [happiness, setHappiness] = useState<number>(currentLevel?.initialHappiness || 50);
   const [gameStarted, setGameStarted] = useState<boolean>(false);

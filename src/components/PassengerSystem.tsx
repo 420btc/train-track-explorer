@@ -56,7 +56,7 @@ const PassengerSystem: React.FC<PassengerSystemProps> = ({
   pickedUpPassengers,
   difficulty,
   currentLevel,
-  trainCapacity = 4, // Capacidad por defecto si no se especifica
+  trainCapacity = 20, // Capacidad por defecto si no se especifica
   gameStarted = false, // Valor por defecto
   canGeneratePassengers = false // Valor por defecto
 }) => {
@@ -77,25 +77,25 @@ const PassengerSystem: React.FC<PassengerSystemProps> = ({
   // Configuración basada en la dificultad
   const difficultySettings = {
     easy: {
-      maxPassengersPerStation: 2,
+      maxPassengersPerStation: 5,
       generationInterval: 90000, // 90 segundos (1.5 minutos)
       expirationTime: 360000,    // 6 minutos
-      stationProbability: 0.25,  // 25% de estaciones generan pasajeros
-      pickupRadius: 15           // Radio de recogida más grande
+      stationProbability: 0.55,  // 55% de estaciones generan pasajeros
+      pickupRadius: 5           // Radio de recogida más grande
     },
     medium: {
-      maxPassengersPerStation: 3,
+      maxPassengersPerStation: 10,
       generationInterval: 60000, // 60 segundos (1 minuto)
       expirationTime: 300000,    // 5 minutos
-      stationProbability: 0.4,   // 40% de estaciones generan pasajeros
-      pickupRadius: 12           // Radio de recogida estándar
+      stationProbability: 0.25,   // 25% de estaciones generan pasajeros
+      pickupRadius: 4           // Radio de recogida estándar
     },
     hard: {
-      maxPassengersPerStation: 5,
+      maxPassengersPerStation: 15,
       generationInterval: 45000, // 45 segundos
       expirationTime: 270000,    // 4.5 minutos
-      stationProbability: 0.6,   // 60% de estaciones generan pasajeros
-      pickupRadius: 10           // Radio de recogida más pequeño
+      stationProbability: 0.15,   // 15% de estaciones generan pasajeros
+      pickupRadius: 2           // Radio de recogida más pequeño
     }
   };
   
@@ -112,14 +112,14 @@ const PassengerSystem: React.FC<PassengerSystemProps> = ({
     ...baseSettings,
     // Ajustar el intervalo de generación según el nivel del jugador
     generationInterval: currentLevel?.passengerFrequency ? 
-      currentLevel.passengerFrequency * 1000 : // Convertir segundos a milisegundos
+      currentLevel.passengerFrequency * 10000 : // Convertir segundos a milisegundos
       Math.round(baseSettings.generationInterval * levelFactor),
     // Ajustar la probabilidad de generación según el nivel
-    stationProbability: Math.min(0.8, baseSettings.stationProbability + ((playerLevel - 1) * 0.03)),
+    stationProbability: Math.min(0.5, baseSettings.stationProbability + ((playerLevel - 1) * 0.03)),
     // Usar el máximo de pasajeros del nivel si está disponible
     maxTotalPassengers: currentLevel?.maxPassengers || 
-      (difficulty === 'easy' ? 4 + playerLevel : difficulty === 'medium' ? 8 + playerLevel : 12 + playerLevel)
-  };
+      (difficulty === 'easy' ? 8 + playerLevel : difficulty === 'medium' ? 16 + playerLevel : 12 + playerLevel)
+  }
   
   // Generate passengers based on difficulty and level settings
   useEffect(() => {
@@ -153,8 +153,8 @@ const PassengerSystem: React.FC<PassengerSystemProps> = ({
       // Seleccionar solo algunas estaciones para generar pasajeros (más realista)
       const stationsToGenerate = stations.filter(station => {
         if (!station.canGenerate) return false;
-        // Solo generar en algunas estaciones cada vez (30% de probabilidad)
-        return Math.random() < 0.3;
+        // Solo generar en algunas estaciones cada vez (20% de probabilidad)
+        return Math.random() < 0.2;
       });
       
       stationsToGenerate.forEach(station => {
@@ -271,7 +271,7 @@ const PassengerSystem: React.FC<PassengerSystemProps> = ({
             );
             
             // Radio de entrega aumentado para mayor fiabilidad
-            const deliveryRadius = settings.pickupRadius * 1.5;
+            const deliveryRadius = settings.pickupRadius * 1.00;
             
             if (distance <= deliveryRadius && isMoving) {
               // Passenger delivered - solo si el tren está en movimiento
@@ -303,7 +303,7 @@ const PassengerSystem: React.FC<PassengerSystemProps> = ({
           );
           
           // Radio de recogida aumentado para mayor fiabilidad
-          const enhancedPickupRadius = settings.pickupRadius * 2; // Duplicado para asegurar la recogida
+          const enhancedPickupRadius = settings.pickupRadius * 1.00; // Duplicado para asegurar la recogida
           
           if (distance <= enhancedPickupRadius && isMoving) {
             // Solo recoger pasajeros si el tren está en movimiento

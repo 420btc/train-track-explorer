@@ -165,25 +165,7 @@ const StationMarker: React.FC<StationMarkerProps> = ({ position, station, onClic
     });
   }
 
-  // Calcular tiempo restante para el pasajero más próximo a expirar
-  const calculateTimeLeft = () => {
-    if (waitingPassengers.length === 0) return null;
-    
-    const currentTime = Date.now();
-    let minTimeLeft = Infinity;
-    
-    waitingPassengers.forEach(passenger => {
-      const expirationTime = passenger.createdAt + 300000; // 5 minutos (300000ms)
-      const timeLeft = Math.max(0, expirationTime - currentTime);
-      if (timeLeft < minTimeLeft) {
-        minTimeLeft = timeLeft;
-      }
-    });
-    
-    return minTimeLeft === Infinity ? null : Math.ceil(minTimeLeft / 1000);
-  };
-  
-  const timeLeft = calculateTimeLeft();
+  // Ya no calculamos el tiempo restante para evitar la cuenta atrás innecesaria
   
   return (
     <Marker 
@@ -202,11 +184,6 @@ const StationMarker: React.FC<StationMarkerProps> = ({ position, station, onClic
             <div className="mt-1 text-[10px]">
               <div className="flex justify-between items-center">
                 <span className="text-green-600 font-medium">{waitingPassengers.length} pasajero{waitingPassengers.length !== 1 ? 's' : ''}</span>
-                {timeLeft !== null && (
-                  <span className={`font-medium ${timeLeft < 60 ? 'text-red-500' : timeLeft < 120 ? 'text-orange-500' : 'text-green-500'}`}>
-                    {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}
-                  </span>
-                )}
               </div>
               {waitingPassengers.map(passenger => (
                 <div key={passenger.id} className="text-[9px] text-gray-500 truncate">

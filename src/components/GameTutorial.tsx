@@ -86,7 +86,7 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
         },
         {
           title: "Objetivo del Nivel",
-          content: "Consigue 500€ y mantén la felicidad por encima del 70% para completar este nivel. ¡No te preocupes si cometes errores, estás aprendiendo!",
+          content: "Consigue 20€ y mantén la felicidad por encima del 70% para completar este nivel. ¡No te preocupes si cometes errores, estás aprendiendo!",
           icon: <Coins className="h-12 w-12 text-yellow-500" />,
           highlight: "objective"
         }
@@ -110,7 +110,7 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
         },
         {
           title: "Objetivo del Nivel",
-          content: "Consigue 1000€ y mantén la felicidad por encima del 60% para completar este nivel. ¡Buena suerte!",
+          content: "Consigue 30€ y mantén la felicidad por encima del 60% para completar este nivel. ¡Buena suerte!",
           icon: <Coins className="h-12 w-12 text-yellow-500" />,
           highlight: "objective"
         }
@@ -137,7 +137,7 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
         },
         {
           title: "Objetivo del Nivel",
-          content: "Consigue 2000€ y mantén la felicidad por encima del 50% mientras gestionas los eventos. ¡Demuestra tu capacidad de adaptación!",
+          content: "Consigue 50€ y mantén la felicidad por encima del 50% mientras gestionas los eventos. ¡Demuestra tu capacidad de adaptación!",
           icon: <Coins className="h-12 w-12 text-yellow-500" />,
           highlight: "objective"
         }
@@ -161,7 +161,7 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
         },
         {
           title: "Objetivo del Nivel",
-          content: "Consigue 3000€ y mantén la felicidad por encima del 40%. Este nivel es un verdadero desafío para los gestores de metro experimentados.",
+          content: "Consigue 75€ y mantén la felicidad por encima del 40%. Este nivel es un verdadero desafío para los gestores de metro experimentados.",
           icon: <Coins className="h-12 w-12 text-yellow-500" />,
           highlight: "objective"
         }
@@ -185,7 +185,7 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
         },
         {
           title: "Objetivo del Nivel",
-          content: "Consigue 5000€ y mantén la felicidad por encima del 30%. Completa este nivel para demostrar que eres un verdadero Maestro del Metro Español.",
+          content: "Consigue 100€ y mantén la felicidad por encima del 30%. Completa este nivel para demostrar que eres un verdadero Maestro del Metro Español.",
           icon: <div className="flex space-x-2">
             <Coins className="h-8 w-8 text-yellow-500" />
             <Heart className="h-8 w-8 text-red-500" />

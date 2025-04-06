@@ -35,11 +35,11 @@ export const gameLevels: GameLevel[] = [
     eventFrequency: 0, // Sin eventos
     objectives: [
       { type: 'passengers', target: 3, current: 0 },
-      { type: 'money', target: 300, current: 0 }
+      { type: 'money', target: 10, current: 0 }
     ],
     unlocked: true,
     completed: false,
-    initialMoney: 1000,
+    initialMoney: 100,
     initialHappiness: 50,
     trainCapacity: 2 // Capacidad limitada en el tutorial
   },
@@ -52,12 +52,12 @@ export const gameLevels: GameLevel[] = [
     maxPassengers: 5,
     eventFrequency: 0,
     objectives: [
-      { type: 'money', target: 500, current: 0 },
+      { type: 'money', target: 20, current: 0 },
       { type: 'happiness', target: 70, current: 0 }
     ],
     unlocked: false,
     completed: false,
-    initialMoney: 800,
+    initialMoney: 100,
     initialHappiness: 40,
     trainCapacity: 3 // Capacidad baja en nivel fácil
   },
@@ -70,13 +70,13 @@ export const gameLevels: GameLevel[] = [
     maxPassengers: 8,
     eventFrequency: 60, // Eventos cada minuto
     objectives: [
-      { type: 'money', target: 1000, current: 0 },
+      { type: 'money', target: 30, current: 0 },
       { type: 'happiness', target: 60, current: 0 },
       { type: 'passengers', target: 15, current: 0 }
     ],
     unlocked: false,
     completed: false,
-    initialMoney: 1200,
+    initialMoney: 100,
     initialHappiness: 50,
     trainCapacity: 4 // Capacidad media
   },
@@ -89,13 +89,13 @@ export const gameLevels: GameLevel[] = [
     maxPassengers: 10,
     eventFrequency: 45, // Eventos cada 45 segundos
     objectives: [
-      { type: 'money', target: 2000, current: 0 },
+      { type: 'money', target: 50, current: 0 },
       { type: 'happiness', target: 50, current: 0 }
     ],
     unlocked: false,
     completed: false,
     timeLimit: 600, // 10 minutos
-    initialMoney: 1500,
+    initialMoney: 100,
     initialHappiness: 60,
     trainCapacity: 5 // Capacidad media-alta
   },
@@ -108,14 +108,14 @@ export const gameLevels: GameLevel[] = [
     maxPassengers: 15,
     eventFrequency: 30, // Eventos cada 30 segundos
     objectives: [
-      { type: 'money', target: 3000, current: 0 },
+      { type: 'money', target: 75, current: 0 },
       { type: 'happiness', target: 40, current: 0 },
       { type: 'passengers', target: 30, current: 0 }
     ],
     unlocked: false,
     completed: false,
     timeLimit: 900, // 15 minutos
-    initialMoney: 2000,
+    initialMoney: 100,
     initialHappiness: 70,
     trainCapacity: 6 // Capacidad alta
   },
@@ -128,7 +128,7 @@ export const gameLevels: GameLevel[] = [
     maxPassengers: 20,
     eventFrequency: 20, // Eventos cada 20 segundos
     objectives: [
-      { type: 'money', target: 5000, current: 0 },
+      { type: 'money', target: 100, current: 0 },
       { type: 'happiness', target: 30, current: 0 },
       { type: 'passengers', target: 50, current: 0 },
       { type: 'time', target: 1200, current: 0 } // Completar en 20 minutos
@@ -136,7 +136,7 @@ export const gameLevels: GameLevel[] = [
     unlocked: false,
     completed: false,
     timeLimit: 1200, // 20 minutos
-    initialMoney: 3000,
+    initialMoney: 100,
     initialHappiness: 80,
     trainCapacity: 8 // Capacidad máxima
   }

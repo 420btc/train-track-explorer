@@ -74,22 +74,22 @@ const Sidebar: React.FC = () => {
         <div className="space-y-2">
           <Button 
             onClick={addNewStation} 
-            disabled={money < 500}
+            disabled={money < 20}
             className="w-full bg-blue-600 hover:bg-blue-700 text-white"
             variant="default"
             size="sm"
           >
-            Añadir Estación (500 €)
+            Añadir Estación (20 €)
           </Button>
           
           <Button 
             onClick={upgradeSpeed} 
-            disabled={money < 1000}
+            disabled={money < 30}
             className="w-full bg-green-600 hover:bg-green-700 text-white"
             variant="default"
             size="sm"
           >
-            Mejorar Velocidad (1000 €)
+            Mejorar Velocidad (30 €)
           </Button>
         </div>
       </div>
