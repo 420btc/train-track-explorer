@@ -35,8 +35,11 @@ interface PassengerSystemProps {
   pickedUpPassengers: Passenger[];
   difficulty: 'easy' | 'medium' | 'hard';
   currentLevel?: {
+    id: number; // ID del nivel (usaremos esto como nivel del jugador)
+    name: string;
     passengerFrequency: number; // En segundos
     maxPassengers: number;
+    trainCapacity?: number;
   };
   trainCapacity?: number;
   gameStarted: boolean; // Añadir propiedad para controlar si el juego ha comenzado
@@ -75,40 +78,47 @@ const PassengerSystem: React.FC<PassengerSystemProps> = ({
   const difficultySettings = {
     easy: {
       maxPassengersPerStation: 2,
-      generationInterval: 45000, // 45 segundos
-      expirationTime: 300000,    // 5 minutos
-      stationProbability: 0.3,   // 30% de estaciones generan pasajeros
+      generationInterval: 90000, // 90 segundos (1.5 minutos)
+      expirationTime: 360000,    // 6 minutos
+      stationProbability: 0.25,  // 25% de estaciones generan pasajeros
       pickupRadius: 15           // Radio de recogida más grande
     },
     medium: {
-      maxPassengersPerStation: 4,
-      generationInterval: 30000, // 30 segundos
-      expirationTime: 270000,    // 4.5 minutos
-      stationProbability: 0.5,   // 50% de estaciones generan pasajeros
-      pickupRadius: 10           // Radio de recogida estándar
+      maxPassengersPerStation: 3,
+      generationInterval: 60000, // 60 segundos (1 minuto)
+      expirationTime: 300000,    // 5 minutos
+      stationProbability: 0.4,   // 40% de estaciones generan pasajeros
+      pickupRadius: 12           // Radio de recogida estándar
     },
     hard: {
-      maxPassengersPerStation: 6,
-      generationInterval: 20000, // 20 segundos
-      expirationTime: 240000,    // 4 minutos
-      stationProbability: 0.7,   // 70% de estaciones generan pasajeros
-      pickupRadius: 8            // Radio de recogida más pequeño
+      maxPassengersPerStation: 5,
+      generationInterval: 45000, // 45 segundos
+      expirationTime: 270000,    // 4.5 minutos
+      stationProbability: 0.6,   // 60% de estaciones generan pasajeros
+      pickupRadius: 10           // Radio de recogida más pequeño
     }
   };
   
   // Obtener configuración base según dificultad
   const baseSettings = difficultySettings[difficulty];
   
+  // Calcular un factor de ajuste basado en el nivel del jugador (1-10)
+  // Nivel 1: factor 1.0 (más lento), Nivel 10: factor 0.5 (más rápido)
+  const playerLevel = currentLevel?.id || 1;
+  const levelFactor = Math.max(0.5, 1.0 - (playerLevel - 1) * 0.05);
+  
   // Si hay un nivel actual, ajustar la configuración según sus parámetros
   const currentSettings = {
     ...baseSettings,
-    // Usar la frecuencia de generación del nivel si está disponible
+    // Ajustar el intervalo de generación según el nivel del jugador
     generationInterval: currentLevel?.passengerFrequency ? 
       currentLevel.passengerFrequency * 1000 : // Convertir segundos a milisegundos
-      baseSettings.generationInterval,
+      Math.round(baseSettings.generationInterval * levelFactor),
+    // Ajustar la probabilidad de generación según el nivel
+    stationProbability: Math.min(0.8, baseSettings.stationProbability + ((playerLevel - 1) * 0.03)),
     // Usar el máximo de pasajeros del nivel si está disponible
     maxTotalPassengers: currentLevel?.maxPassengers || 
-      (difficulty === 'easy' ? 6 : difficulty === 'medium' ? 12 : 18)
+      (difficulty === 'easy' ? 4 + playerLevel : difficulty === 'medium' ? 8 + playerLevel : 12 + playerLevel)
   };
   
   // Generate passengers based on difficulty and level settings
