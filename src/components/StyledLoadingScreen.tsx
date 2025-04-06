@@ -1,6 +1,7 @@
 import React from 'react';
 import ConsoleBanner from './ConsoleBanner';
 import { Train } from 'lucide-react';
+import SimpleTrainAnimation from './SimpleTrainAnimation';
 
 interface StyledLoadingScreenProps {
   isVisible: boolean;
@@ -35,10 +36,12 @@ const StyledLoadingScreen: React.FC<StyledLoadingScreenProps> = ({ isVisible }) 
           {/* Base de las vías */}
           <div className="w-full h-[20px] bg-[#222222] flex items-center">
             {/* Traviesas */}
-            <div className="w-full h-[6px] flex">
-              {Array(60).fill(0).map((_, i) => (
-                <div key={i} className="h-full w-[20px] mx-[10px] bg-[#444444]"></div>
-              ))}
+            <div className="w-full h-[6px] flex justify-center">
+              <div className="w-[95%] flex justify-between">
+                {Array(50).fill(0).map((_, i) => (
+                  <div key={i} className="h-full w-[10px] bg-[#444444]"></div>
+                ))}
+              </div>
             </div>
           </div>
           
@@ -47,6 +50,68 @@ const StyledLoadingScreen: React.FC<StyledLoadingScreenProps> = ({ isVisible }) 
             <div className="w-[95%] flex justify-between">
               <div className="h-full w-[10px] bg-[#111111]"></div>
               <div className="h-full w-[10px] bg-[#111111]"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      {/* Vamos a usar directamente el mismo componente de animación del tren que en el menú principal */}
+      <div className="absolute bottom-[40px] left-0 w-full overflow-hidden" style={{ height: '40px', zIndex: 30 }}>
+        <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
+          <div className="simple-train" style={{ animationDuration: '10s', position: 'absolute', bottom: '0px', display: 'flex', flexDirection: 'row' }}>
+            <div className="train-container" style={{ display: 'flex', flexDirection: 'row' }}>
+              {/* Locomotora */}
+              <div>
+                <div className="train-body">
+                  <div className="train-cabin"></div>
+                  <div className="train-window"></div>
+                </div>
+                <div className="train-base"></div>
+                <div className="train-wheels">
+                  <div className="wheel"></div>
+                  <div className="wheel"></div>
+                  <div className="wheel"></div>
+                </div>
+              </div>
+              
+              {/* Vagón 1 */}
+              <div>
+                <div className="wagon">
+                  <div className="wagon-window wagon-window-1"></div>
+                  <div className="wagon-window wagon-window-2"></div>
+                </div>
+                <div className="train-base"></div>
+                <div className="train-wheels">
+                  <div className="wheel"></div>
+                  <div className="wheel"></div>
+                </div>
+              </div>
+              
+              {/* Vagón 2 */}
+              <div>
+                <div className="wagon" style={{ backgroundColor: '#E91E63' }}>
+                  <div className="wagon-window wagon-window-1"></div>
+                  <div className="wagon-window wagon-window-2"></div>
+                </div>
+                <div className="train-base"></div>
+                <div className="train-wheels">
+                  <div className="wheel"></div>
+                  <div className="wheel"></div>
+                </div>
+              </div>
+              
+              {/* Vagón 3 */}
+              <div>
+                <div className="wagon" style={{ backgroundColor: '#009688' }}>
+                  <div className="wagon-window wagon-window-1"></div>
+                  <div className="wagon-window wagon-window-2"></div>
+                </div>
+                <div className="train-base"></div>
+                <div className="train-wheels">
+                  <div className="wheel"></div>
+                  <div className="wheel"></div>
+                </div>
+              </div>
             </div>
           </div>
         </div>

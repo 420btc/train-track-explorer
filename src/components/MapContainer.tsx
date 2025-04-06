@@ -130,21 +130,34 @@ const MapContainer: React.FC<MapContainerProps> = ({
         )}
         <MapController center={center} zoom={zoom} />
         
-        {/* Render tracks */}
+        {/* Render tracks with white outline */}
         {tracks.map((track) => (
-          <Polyline
-            key={track.id}
-            positions={track.path.map(p => [p.lat, p.lng])}
-            pathOptions={{ 
-              color: track.color,
-              // Usar un ancho consistente de 4 para todas las vías, excepto la seleccionada que será 6
-              weight: track.id === currentTrackId ? 6 : 4,
-              opacity: track.id === currentTrackId ? 1 : 0.8
-            }}
-            eventHandlers={{
-              click: () => handleTrackClick(track.id)
-            }}
-          />
+          <div key={track.id} style={{ display: 'contents' }}>
+            {/* White outline layer */}
+            <Polyline
+              positions={track.path.map(p => [p.lat, p.lng])}
+              pathOptions={{ 
+                color: 'white',
+                weight: track.id === currentTrackId ? 8 : 6,
+                opacity: 0.8
+              }}
+              eventHandlers={{
+                click: () => handleTrackClick(track.id)
+              }}
+            />
+            {/* Colored track layer */}
+            <Polyline
+              positions={track.path.map(p => [p.lat, p.lng])}
+              pathOptions={{ 
+                color: track.color,
+                weight: track.id === currentTrackId ? 6 : 4,
+                opacity: track.id === currentTrackId ? 1 : 0.9
+              }}
+              eventHandlers={{
+                click: () => handleTrackClick(track.id)
+              }}
+            />
+          </div>
         ))}
         
         {/* Render stations */}

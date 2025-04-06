@@ -181,17 +181,14 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
     } finally {
       setIsLoading(false);
       
-      // Mostrar el tutorial solo después de la carga inicial del mapa,
-      // y solo si no se ha mostrado antes en esta sesión
-      if (isFirstTimeUser && !tutorialShown.current && !isFirstLoad.current) {
-        // Marcar que el tutorial ya se ha mostrado para evitar que aparezca de nuevo
-        tutorialShown.current = true;
-        
-        // Mostrar el tutorial con un retraso para asegurar que el mapa esté completamente cargado
-        setTimeout(() => {
-          setShowTutorial(true);
-        }, 2000); // 2 segundos de retraso
-      }
+      // Mostrar el tutorial siempre después de cargar el mapa, independientemente de si es usuario nuevo o no
+      // Marcar que el tutorial ya se ha mostrado para evitar que aparezca de nuevo en esta sesión
+      tutorialShown.current = true;
+      
+      // Mostrar el tutorial con un retraso para asegurar que el mapa esté completamente cargado
+      setTimeout(() => {
+        setShowTutorial(true);
+      }, 1500); // 1.5 segundos de retraso
     }
   }, []);
 
@@ -1251,33 +1248,42 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
             
             {/* Leyenda de las vías como componente independiente (ahora en esquina izquierda inferior) */}
             <div className="absolute left-4 bottom-8 z-50">
-              <TrackLegend tracks={tracks} />
+              <TrackLegend tracks={tracks} stations={stations} />
             </div>
             
             {/* Panel de control superpuesto (más alargado y mitad de altura) */}
             <div className="absolute bottom-8 left-0 right-0 flex justify-center items-center z-50 pointer-events-none">
               <div className="bg-background/85 backdrop-blur-md p-4 rounded-xl shadow-xl border border-primary/30 w-full max-w-[1080px] mx-4 pointer-events-auto">
                 <div className="flex flex-row items-center gap-6 justify-between h-[85px]">
-                  {/* Sección 1: Información de pasajeros integrada con botón de asientos */}
-                  <div className="flex items-center gap-4">
-                    <div className="flex-shrink-0">
-                      <PassengerInfo 
-                        money={money}
-                        points={points}
-                        activePassengers={activePassengers}
-                        pickedUpPassengers={pickedUpPassengers}
-                      />
+                  {/* Sección 1: Información de pasajeros integrada con botones de control */}
+                  <div className="flex items-center gap-2">
+                    <PassengerInfo 
+                      money={money}
+                      points={points}
+                      activePassengers={activePassengers}
+                      pickedUpPassengers={pickedUpPassengers}
+                    />
+                    <div className="flex items-center gap-2 ml-3">
+                      <Button
+                        onClick={() => setSeatsModalVisible(true)}
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-[11px] px-2 border-blue-500/60 flex items-center justify-center hover:bg-blue-500/10 transition-colors"
+                        title="Ver asientos del tren"
+                      >
+                        <Train className="h-3.5 w-3.5 mr-1" />
+                        {pickedUpPassengers.length}/{trainCapacity}
+                      </Button>
+                      <Button
+                        onClick={() => setShowPassengersList(!showPassengersList)}
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-[11px] px-2 border-blue-500/60 flex items-center justify-center hover:bg-blue-500/10 transition-colors"
+                      >
+                        <Users className="h-3.5 w-3.5 mr-1" />
+                        {showPassengersList ? 'Ocultar' : 'Ver'}
+                      </Button>
                     </div>
-                    
-                    {/* Botón compacto para mostrar modal de asientos */}
-                    <button 
-                      onClick={() => setSeatsModalVisible(true)}
-                      className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white text-sm rounded-md hover:bg-blue-600 transition-colors shadow-md"
-                      title="Ver asientos del tren"
-                    >
-                      <Train size={18} className="mr-1" />
-                      <span className="font-medium">{pickedUpPassengers.length}/{trainCapacity}</span>
-                    </button>
                   </div>
                   
                   {/* Separador vertical */}

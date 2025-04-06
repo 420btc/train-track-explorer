@@ -15,22 +15,26 @@ const PassengerInfo: React.FC<PassengerInfoProps> = ({
   pickedUpPassengers
 }) => {
   return (
-    <div className="w-full flex flex-col gap-2">
-      <div className="grid grid-cols-3 gap-2 w-full">
-        <div className="bg-green-600 text-white px-2 py-1 rounded-md shadow-md text-xs font-medium text-center">
-          ${money}
+    <div className="flex items-center gap-3 w-full">
+      <div className="flex items-center gap-1">
+        <div className="bg-green-600 text-white px-2 py-1 rounded-md shadow-sm text-xs font-medium">
+          €{money}
         </div>
-        <div className="bg-blue-600 text-white px-2 py-1 rounded-md shadow-md text-xs font-medium text-center">
-          {points} pts
+        <span className="text-[10px] text-muted-foreground">Dinero</span>
+      </div>
+      
+      <div className="flex items-center gap-1">
+        <div className="bg-blue-600 text-white px-2 py-1 rounded-md shadow-sm text-xs font-medium">
+          {points}
         </div>
-        <div className="bg-gray-700 text-white px-2 py-1 rounded-md shadow-md text-xs font-medium text-center">
+        <span className="text-[10px] text-muted-foreground">Puntos</span>
+      </div>
+      
+      <div className="flex items-center gap-1">
+        <div className="bg-gray-700 text-white px-2 py-1 rounded-md shadow-sm text-xs font-medium">
           {pickedUpPassengers.length}/{activePassengers.length + pickedUpPassengers.length}
         </div>
-      </div>
-      <div className="grid grid-cols-3 gap-2 w-full text-[10px] text-muted-foreground text-center">
-        <div>Dinero</div>
-        <div>Puntos</div>
-        <div>Pasajeros</div>
+        <span className="text-[10px] text-muted-foreground">Pasajeros</span>
       </div>
     </div>
   );

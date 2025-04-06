@@ -16,15 +16,24 @@ export interface TrackSegment {
   weight: number;
 }
 
+export interface Station {
+  id: string;
+  name: string;
+  position: Coordinates;
+  trackId: string;
+  color: string;
+  type?: 'residential' | 'commercial' | 'tourist' | 'industrial';
+}
+
 // Constants
 export const DEFAULT_COORDINATES: Coordinates = { lat: 36.7213, lng: -4.4214 }; // Málaga
 export const DEFAULT_ZOOM = 15;
-const MAX_TRACK_LENGTH = 1500; // Reducido para vías más cortas pero más numerosas
-const MIN_TRACK_LENGTH = 400; // Reducido para permitir vías más cortas
-const URBAN_AREA_RADIUS = 2500; // Reducido para mantener la red más compacta
-const STATIONS_PER_TRACK = 3; // Reducido para tener más estaciones distribuidas en más vías
+const MAX_TRACK_LENGTH = 1800; // Aumentado para vías más largas y mejor visualización
+const MIN_TRACK_LENGTH = 800; // Aumentado para evitar vías demasiado cortas
+const URBAN_AREA_RADIUS = 2500; // Mantiene la red compacta pero con vías más largas
+const STATIONS_PER_TRACK = 3; // Estaciones distribuidas en vías más largas
 const STATIONS_PER_CONNECTION = 2; // Número fijo de estaciones por conexión
-const MIN_STATION_DISTANCE = 0.2; // Reducido para permitir estaciones más cercanas
+const MIN_STATION_DISTANCE = 0.3; // Aumentado para distribuir mejor las estaciones en vías más largas
 
 // Token de MapBox para geocodificación
 const MAPBOX_TOKEN = 'pk.eyJ1IjoiNDIwYnRjIiwiYSI6ImNtOTN3ejBhdzByNjgycHF6dnVmeHl2ZTUifQ.Utq_q5wN6DHwpkn6rcpZdw';
@@ -228,6 +237,35 @@ export const generateTrackNetwork = async (center: Coordinates): Promise<TrackSe
     // Ordenar colores por longitud deseada: azul (más largo), amarillo, verde, rojo, naranja, verde azulado, rosa
     const orderedTrackColors = ['#1a73e8', '#fbbc04', '#34a853', '#ea4335', '#FF5722', '#009688', '#E91E63'];
     
+    // Definir direcciones cardinales para distribuir las vías en diferentes orientaciones
+    const directions = [
+      { name: 'norte', angle: 0 },
+      { name: 'noreste', angle: 45 },
+      { name: 'este', angle: 90 },
+      { name: 'sureste', angle: 135 },
+      { name: 'sur', angle: 180 },
+      { name: 'suroeste', angle: 225 },
+      { name: 'oeste', angle: 270 },
+      { name: 'noroeste', angle: 315 }
+    ];
+    
+    // Asignar direcciones a las líneas para asegurar cobertura en todas las direcciones
+    const assignedDirections: {[key: number]: number} = {};
+    
+    // Asegurar que las primeras líneas cubran las direcciones principales (N, S, E, O)
+    const mainDirectionIndices = [0, 4, 2, 6]; // norte, sur, este, oeste
+    for (let i = 0; i < Math.min(4, lineCount); i++) {
+      assignedDirections[i] = mainDirectionIndices[i % mainDirectionIndices.length];
+    }
+    
+    // Asignar direcciones restantes aleatoriamente para las líneas adicionales
+    for (let i = 4; i < lineCount; i++) {
+      // Elegir una dirección no principal aleatoriamente
+      const availableDirections = [1, 3, 5, 7]; // noreste, sureste, suroeste, noroeste
+      const randomIndex = Math.floor(Math.random() * availableDirections.length);
+      assignedDirections[i] = availableDirections[randomIndex];
+    }
+    
     // Función para verificar si una nueva ruta se superpone demasiado con rutas existentes
     const checkOverlappingRoutes = (newPath: Coordinates[], existingTracks: TrackSegment[]): boolean => {
       // Si no hay vías existentes, no hay superposición
@@ -276,21 +314,55 @@ export const generateTrackNetwork = async (center: Coordinates): Promise<TrackSe
     
     // Función auxiliar para crear vías de respaldo si las APIs fallan
     const createFallbackTrack = (id: string, startPoint: Coordinates, endPoint: Coordinates, color: string, weight: number): TrackSegment => {
+      // Verificar la distancia directa entre puntos para asegurar longitud mínima
+      const directDistance = turf.distance(
+        [startPoint.lng, startPoint.lat],
+        [endPoint.lng, endPoint.lat]
+      ) * 1000; // Convertir km a metros
+      
+      // Si la distancia es menor que el mínimo, ajustar el punto final para aumentar la distancia
+      let adjustedEndPoint = {...endPoint};
+      if (directDistance < MIN_TRACK_LENGTH) {
+        // Calcular el vector de dirección
+        const direction = {
+          lat: endPoint.lat - startPoint.lat,
+          lng: endPoint.lng - startPoint.lng
+        };
+        
+        // Normalizar el vector
+        const length = Math.sqrt(direction.lat * direction.lat + direction.lng * direction.lng);
+        const normalizedDirection = {
+          lat: direction.lat / length,
+          lng: direction.lng / length
+        };
+        
+        // Calcular factor de escala para alcanzar la distancia mínima
+        const scaleFactor = MIN_TRACK_LENGTH / (directDistance || 1); // Evitar división por cero
+        
+        // Ajustar el punto final
+        adjustedEndPoint = {
+          lat: startPoint.lat + normalizedDirection.lat * scaleFactor * directDistance / 1000,
+          lng: startPoint.lng + normalizedDirection.lng * scaleFactor * directDistance / 1000
+        };
+      }
+      
       // Crear puntos intermedios para que la vía no sea solo una línea recta
       const path: Coordinates[] = [startPoint];
       
-      // Añadir 3-5 puntos intermedios con pequeñas variaciones
-      const pointCount = Math.floor(Math.random() * 3) + 3;
+      // Añadir 4-7 puntos intermedios con variaciones para vías más naturales
+      const pointCount = Math.floor(Math.random() * 4) + 4;
       
       for (let i = 1; i <= pointCount; i++) {
         const ratio = i / (pointCount + 1);
         
-        // Calcular punto base en la línea recta
-        const baseLat = startPoint.lat + (endPoint.lat - startPoint.lat) * ratio;
-        const baseLng = startPoint.lng + (endPoint.lng - startPoint.lng) * ratio;
+        // Calcular punto base en la línea recta usando el punto final ajustado
+        const baseLat = startPoint.lat + (adjustedEndPoint.lat - startPoint.lat) * ratio;
+        const baseLng = startPoint.lng + (adjustedEndPoint.lng - startPoint.lng) * ratio;
         
-        // Añadir una pequeña variación aleatoria
-        const variation = 0.001 * (Math.random() - 0.5);
+        // Añadir una variación aleatoria más pronunciada para vías más naturales
+        // Variación proporcional a la distancia total para mantener la coherencia visual
+        const distanceFactor = Math.min(1, directDistance / 1000) * 0.0015;
+        const variation = distanceFactor * (Math.random() - 0.5);
         
         path.push({
           lat: baseLat + variation,
@@ -298,7 +370,8 @@ export const generateTrackNetwork = async (center: Coordinates): Promise<TrackSe
         });
       }
       
-      path.push(endPoint);
+      // Usar el punto final ajustado en lugar del original
+      path.push(adjustedEndPoint);
       
       // Calcular distancia aproximada usando turf.distance para cada segmento
       let distance = 0;
@@ -327,8 +400,15 @@ export const generateTrackNetwork = async (center: Coordinates): Promise<TrackSe
         progress: lineProgress,
         message: `Generando línea ${i+1} de ${lineCount}...`
       });
-      // Generate a random angle for this line's direction
-      const angle = (i * (360 / lineCount)) + (Math.random() * 30 - 15);
+      
+      // Usar la dirección asignada para esta línea con una pequeña variación aleatoria
+      const directionIndex = assignedDirections[i];
+      const baseAngle = directions[directionIndex].angle;
+      // Añadir una pequeña variación aleatoria de +/- 15 grados para mantener algo de aleatoriedad
+      const angle = baseAngle + (Math.random() * 30 - 15);
+      
+      console.log(`Línea ${i+1}: Dirección ${directions[directionIndex].name} (${baseAngle}°), ángulo final: ${angle}°`);
+      
       const color = orderedTrackColors[i % orderedTrackColors.length];
       
       // Create points for route calculation, staying within urban radius
@@ -532,13 +612,193 @@ export const generateTrackNetwork = async (center: Coordinates): Promise<TrackSe
     if (tracks.length >= 2) {
       console.log('Creating connections between tracks...');
       let connectionsAdded = 0;
-      const maxConnections = Math.min(20, lineCount * 3); // Más conexiones para una red más densa
+      const maxConnections = Math.min(25, lineCount * 3); // Más conexiones para una red más densa
       
+      // Crear un grafo de conectividad para asegurar que todas las vías estén conectadas
+      const trackConnectivity: {[key: string]: string[]} = {};
+      
+      // Inicializar el grafo con todas las vías principales (no conexiones)
+      for (const track of tracks) {
+        if (track.id.startsWith('track-')) {
+          trackConnectivity[track.id] = [];
+        }
+      }
+      
+      // Función para verificar si hay un camino entre dos vías en el grafo actual
+      const hasPath = (start: string, end: string, visited: Set<string> = new Set()): boolean => {
+        if (start === end) return true;
+        if (visited.has(start)) return false;
+        
+        visited.add(start);
+        const neighbors = trackConnectivity[start] || [];
+        
+        for (const neighbor of neighbors) {
+          if (hasPath(neighbor, end, visited)) return true;
+        }
+        
+        return false;
+      };
+      
+      // Función para actualizar el grafo de conectividad
+      const updateConnectivity = (track1: string, track2: string) => {
+        if (!trackConnectivity[track1]) trackConnectivity[track1] = [];
+        if (!trackConnectivity[track2]) trackConnectivity[track2] = [];
+        
+        trackConnectivity[track1].push(track2);
+        trackConnectivity[track2].push(track1);
+      };
+      
+      // Primero, conectar todas las vías principales para asegurar que haya al menos un camino entre ellas
+      const mainTracks = tracks.filter(t => t.id.startsWith('track-'));
+      
+      // Asegurar que todas las vías principales estén conectadas (formando un árbol de expansión mínima)
+      for (let i = 1; i < mainTracks.length; i++) {
+        // Buscar la vía más cercana que ya esté conectada al árbol
+        let closestTrack = -1;
+        let minDistance = Infinity;
+        
+        for (let j = 0; j < i; j++) {
+          // Encontrar los puntos más cercanos entre las dos vías
+          let trackDistance = Infinity;
+          let point1Index = -1;
+          let point2Index = -1;
+          
+          for (let p1 = 0; p1 < mainTracks[i].path.length; p1 += Math.max(1, Math.floor(mainTracks[i].path.length / 10))) {
+            for (let p2 = 0; p2 < mainTracks[j].path.length; p2 += Math.max(1, Math.floor(mainTracks[j].path.length / 10))) {
+              const dist = turf.distance(
+                [mainTracks[i].path[p1].lng, mainTracks[i].path[p1].lat],
+                [mainTracks[j].path[p2].lng, mainTracks[j].path[p2].lat]
+              ) * 1000; // Convertir a metros
+              
+              if (dist < trackDistance && dist >= 400 && dist < URBAN_AREA_RADIUS * 0.6) {
+                trackDistance = dist;
+                point1Index = p1;
+                point2Index = p2;
+              }
+            }
+          }
+          
+          if (trackDistance < minDistance) {
+            minDistance = trackDistance;
+            closestTrack = j;
+          }
+        }
+        
+        // Si encontramos una conexión válida, crear la vía de conexión
+        if (closestTrack >= 0 && minDistance < URBAN_AREA_RADIUS * 0.6) {
+          // Encontrar los puntos más cercanos entre las dos vías nuevamente
+          let minDist = Infinity;
+          let point1 = mainTracks[i].path[0];
+          let point2 = mainTracks[closestTrack].path[0];
+          
+          for (let p1 = 0; p1 < mainTracks[i].path.length; p1 += Math.max(1, Math.floor(mainTracks[i].path.length / 10))) {
+            for (let p2 = 0; p2 < mainTracks[closestTrack].path.length; p2 += Math.max(1, Math.floor(mainTracks[closestTrack].path.length / 10))) {
+              const dist = turf.distance(
+                [mainTracks[i].path[p1].lng, mainTracks[i].path[p1].lat],
+                [mainTracks[closestTrack].path[p2].lng, mainTracks[closestTrack].path[p2].lat]
+              ) * 1000;
+              
+              if (dist < minDist) {
+                minDist = dist;
+                point1 = mainTracks[i].path[p1];
+                point2 = mainTracks[closestTrack].path[p2];
+              }
+            }
+          }
+          
+          // Crear la conexión entre estas dos vías
+          try {
+            const response = await fetch(
+              `https://router.project-osrm.org/route/v1/driving/` +
+              `${point1.lng},${point1.lat};${point2.lng},${point2.lat}` +
+              `?overview=full&geometries=polyline`
+            );
+            
+            if (response.ok) {
+              const data = await response.json();
+              
+              if (data.routes && data.routes.length > 0) {
+                try {
+                  const decodedPath = polyline.decode(data.routes[0].geometry);
+                  const path = decodedPath.map(point => ({
+                    lat: point[0],
+                    lng: point[1]
+                  }));
+                  
+                  if (path.length > 0) {
+                    const connectionId = `connection-${i}-${closestTrack}`;
+                    tracks.push({
+                      id: connectionId,
+                      path: path,
+                      distance: data.routes[0].distance,
+                      color: '#00BCD4', // Color cian para conexiones
+                      weight: 3
+                    });
+                    
+                    // Actualizar el grafo de conectividad
+                    updateConnectivity(mainTracks[i].id, mainTracks[closestTrack].id);
+                    
+                    connectionsAdded++;
+                    console.log(`Added essential connection between lines ${i+1} and ${closestTrack+1}`);
+                  }
+                } catch (error) {
+                  console.error('Error decoding connection polyline:', error);
+                  // Crear una conexión de respaldo
+                  const fallbackTrack = createFallbackTrack(
+                    `connection-${i}-${closestTrack}`,
+                    point1,
+                    point2,
+                    '#00BCD4',
+                    3
+                  );
+                  tracks.push(fallbackTrack);
+                  
+                  // Actualizar el grafo de conectividad
+                  updateConnectivity(mainTracks[i].id, mainTracks[closestTrack].id);
+                  
+                  connectionsAdded++;
+                  console.log(`Added essential fallback connection between lines ${i+1} and ${closestTrack+1}`);
+                }
+              }
+            } else {
+              throw new Error(`OSRM API responded with status: ${response.status}`);
+            }
+          } catch (error) {
+            console.error('Error creating essential connection:', error);
+            // Crear una conexión de respaldo
+            const fallbackTrack = createFallbackTrack(
+              `connection-${i}-${closestTrack}`,
+              point1,
+              point2,
+              '#00BCD4',
+              3
+            );
+            tracks.push(fallbackTrack);
+            
+            // Actualizar el grafo de conectividad
+            updateConnectivity(mainTracks[i].id, mainTracks[closestTrack].id);
+            
+            connectionsAdded++;
+            console.log(`Added essential fallback connection between lines ${i+1} and ${closestTrack+1}`);
+          }
+        }
+      }
+      
+      // Ahora añadir conexiones adicionales aleatorias para hacer la red más densa
       // Find potential connection points between tracks
       for (let i = 0; i < tracks.length - 1 && connectionsAdded < maxConnections; i++) {
         for (let j = i + 1; j < tracks.length && connectionsAdded < maxConnections; j++) {
-          // Aumentamos aún más la probabilidad de conexión para tener una red más densa e interconectada
-          if (Math.random() > 0.2) {
+          // Solo considerar vías principales para conexiones adicionales
+          if (!tracks[i].id.startsWith('track-') || !tracks[j].id.startsWith('track-')) continue;
+          
+          // Verificar si ya existe un camino directo entre estas vías
+          if (trackConnectivity[tracks[i].id]?.includes(tracks[j].id)) continue;
+          
+          // Probabilidad de conexión basada en si ya hay un camino indirecto
+          const hasIndirectPath = hasPath(tracks[i].id, tracks[j].id);
+          const connectionProbability = hasIndirectPath ? 0.3 : 0.7; // Mayor probabilidad si no hay camino
+          
+          if (Math.random() < connectionProbability) {
             const track1 = tracks[i];
             const track2 = tracks[j];
             
@@ -554,13 +814,17 @@ export const generateTrackNetwork = async (center: Coordinates): Promise<TrackSe
             const point1 = track1.path[point1Index];
             const point2 = track2.path[point2Index];
             
-            // Check if points are close enough for an urban connection (not too long)
+            // Check if points are within an appropriate distance range for a connection
+            // No demasiado cerca (para evitar conexiones muy cortas) ni demasiado lejos
             const distance = turf.distance(
               [point1.lng, point1.lat],
               [point2.lng, point2.lat]
             ) * 1000; // Convert km to meters
             
-            if (distance < URBAN_AREA_RADIUS * 0.6) {
+            // Asegurar que la conexión no sea demasiado corta ni demasiado larga
+            // Mínimo 400m para evitar conexiones demasiado cortas
+            // Máximo URBAN_AREA_RADIUS * 0.6 para mantener conexiones urbanas razonables
+            if (distance >= 400 && distance < URBAN_AREA_RADIUS * 0.6) {
               try {
                 // Get route between these points
                 const response = await fetch(
@@ -585,13 +849,18 @@ export const generateTrackNetwork = async (center: Coordinates): Promise<TrackSe
                     }));
                     
                     if (path.length > 0) {
+                      const connectionId = `connection-${i}-${j}`;
                       tracks.push({
-                        id: `connection-${i}-${j}`,
+                        id: connectionId,
                         path: path,
                         distance: data.routes[0].distance,
                         color: '#00BCD4', // Color cian para conexiones (más distintivo)
                         weight: 3
                       });
+                      
+                      // Actualizar el grafo de conectividad
+                      updateConnectivity(tracks[i].id, tracks[j].id);
+                      
                       connectionsAdded++;
                       console.log(`Added connection between lines ${i+1} and ${j+1}`);
                     } else {
@@ -608,6 +877,10 @@ export const generateTrackNetwork = async (center: Coordinates): Promise<TrackSe
                       3
                     );
                     tracks.push(fallbackTrack);
+                    
+                    // Actualizar el grafo de conectividad
+                    updateConnectivity(tracks[i].id, tracks[j].id);
+                    
                     connectionsAdded++;
                     console.log(`Added fallback connection between lines ${i+1} and ${j+1} due to polyline error`);
                   }
@@ -626,6 +899,10 @@ export const generateTrackNetwork = async (center: Coordinates): Promise<TrackSe
                     3
                   );
                   tracks.push(fallbackTrack);
+                  
+                  // Actualizar el grafo de conectividad
+                  updateConnectivity(tracks[i].id, tracks[j].id);
+                  
                   connectionsAdded++;
                   console.log(`Added fallback connection between lines ${i+1} and ${j+1} due to API error`);
                 }
@@ -914,6 +1191,14 @@ export const generateStations = (tracks: TrackSegment[]): any[] => {
   return stations;
 };
 
+// Función para calcular la distancia entre dos puntos geográficos (en kilómetros)
+export const calculateDistance = (p1: Coordinates, p2: Coordinates): number => {
+  // Usar turf.js para calcular la distancia (más preciso)
+  const point1 = turf.point([p1.lng, p1.lat]);
+  const point2 = turf.point([p2.lng, p2.lat]);
+  return turf.distance(point1, point2, {units: 'kilometers'});
+};
+
 // Function to find the closest track segment to a point
 export const findClosestTrack = (point: Coordinates, tracks: TrackSegment[]): string | null => {
   if (!tracks.length) return null;
@@ -1000,9 +1285,4 @@ export const findConnectingTrack = (
   return minDistance < 0.2 ? closestTrack : null;
 };
 
-// Función auxiliar para calcular la distancia entre dos puntos
-const calculateDistance = (point1: Coordinates, point2: Coordinates): number => {
-  const p1 = turf.point([point1.lng, point1.lat]);
-  const p2 = turf.point([point2.lng, point2.lat]);
-  return turf.distance(p1, p2, {units: 'kilometers'});
-};
+// Utilizamos la función calculateDistance exportada anteriormente

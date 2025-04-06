@@ -60,12 +60,12 @@ const MainMenu: React.FC<MainMenuProps> = ({ onStartGame }) => {
       <SimpleTrainAnimation />
       
       {/* Contenido superpuesto */}
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-5xl md:text-7xl font-bold text-white mb-6 drop-shadow-lg">
-            Metro Español v0.1
+      <div className="absolute inset-0 flex flex-col items-center justify-center pt-0 mt-0">
+        <div className="text-center transform -translate-y-16">
+          <h1 className="text-5xl md:text-7xl font-bold text-white mb-4 drop-shadow-lg">
+            Urban Metro Track
           </h1>
-          <p className="text-2xl md:text-3xl text-white mb-12 drop-shadow-md">
+          <p className="text-xl md:text-2xl text-white mb-8 max-w-2xl mx-auto leading-tight drop-shadow-md bg-black/20 px-6 py-3 rounded-lg">
             Tu ciudad convertida en un juego de trenes!
           </p>
           

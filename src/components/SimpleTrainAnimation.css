@@ -1,18 +1,27 @@
 @keyframes moveRight {
   0% {
-    transform: translateX(-100%);
+    transform: translateX(-150px);
   }
   100% {
     transform: translateX(100vw);
   }
 }
 
-.simple-train {
+.simple-train-wrapper {
   position: absolute;
   bottom: 10px;
   left: 0;
-  animation: moveRight 15s linear infinite;
-  z-index: 10;
+  width: 100%;
+  overflow: hidden;
+  z-index: 30;
+  pointer-events: none;
+}
+
+.simple-train {
+  position: relative;
+  animation: moveRight 10s linear infinite;
+  width: auto;
+  display: inline-block;
 }
 
 .train-body {
@@ -101,22 +110,4 @@
   position: relative;
 }
 
-/* Resplandor amarillo */
-@keyframes pulse {
-  0% { opacity: 0.4; }
-  50% { opacity: 0.7; }
-  100% { opacity: 0.4; }
-}
 
-.train-glow {
-  position: absolute;
-  width: 120%;
-  height: 150%;
-  background-color: rgba(255, 215, 0, 0.4);
-  filter: blur(10px);
-  border-radius: 50%;
-  z-index: 5;
-  top: -25%;
-  left: -10%;
-  animation: pulse 2s infinite ease-in-out;
-}

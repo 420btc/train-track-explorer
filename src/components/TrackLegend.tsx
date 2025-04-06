@@ -1,43 +1,43 @@
 import React from 'react';
-import { TrackSegment } from '@/lib/mapUtils';
+import { TrackSegment, Station } from '@/lib/mapUtils';
 import { Train, MapPin } from 'lucide-react';
-
-// Nombres bonitos para las líneas de metro con destinos de diversas ciudades españolas
-const metroLineNames = [
-  { name: 'Línea Cervantes', destination: 'Madrid: Sol - Retiro' },
-  { name: 'Línea Picasso', destination: 'Málaga: Centro - Playa' },
-  { name: 'Línea Gaudí', destination: 'Barcelona: Pl. Catalunya - Barceloneta' },
-  { name: 'Línea Dalí', destination: 'Figueres: Museo - Castillo' },
-  { name: 'Línea Velázquez', destination: 'Sevilla: Triana - Alameda' },
-  { name: 'Línea Miró', destination: 'Mallorca: Catedral - Puerto' },
-  { name: 'Línea Sorolla', destination: 'Valencia: Ciudad Artes - Playa' },
-  { name: 'Línea Almodóvar', destination: 'Toledo: Alcázar - Zocodover' },
-  { name: 'Línea Buñuel', destination: 'Zaragoza: Pilar - Aljafería' },
-  { name: 'Línea Lorca', destination: 'Granada: Alhambra - Albaicín' },
-  { name: 'Línea Neruda', destination: 'Bilbao: Guggenheim - Casco Viejo' },
-  { name: 'Línea Machado', destination: 'Córdoba: Mezquita - Judería' }
-];
 
 interface TrackLegendProps {
   tracks: TrackSegment[];
+  stations?: Station[];
 }
 
-const TrackLegend: React.FC<TrackLegendProps> = ({ tracks }) => {
+const TrackLegend: React.FC<TrackLegendProps> = ({ tracks, stations = [] }) => {
   // Filtrar solo las vías principales (no las conexiones)
   const mainTracks = tracks.filter(track => !track.id.includes('connection'));
   
-  // Asignar nombres bonitos a cada vía principal
-  const tracksWithNames = mainTracks.map((track, index) => ({
-    ...track,
-    lineName: metroLineNames[index % metroLineNames.length].name,
-    destination: metroLineNames[index % metroLineNames.length].destination
-  }));
+  // Crear un mapa de estaciones por trackId para buscar rápidamente
+  const stationsByTrack = {};
+  stations.forEach(station => {
+    if (!stationsByTrack[station.trackId]) {
+      stationsByTrack[station.trackId] = [];
+    }
+    stationsByTrack[station.trackId].push(station);
+  });
+  
+  // Asignar nombres reales a cada vía principal basados en sus estaciones
+  const tracksWithNames = mainTracks.map((track, index) => {
+    const trackStations = stationsByTrack[track.id] || [];
+    const firstStation = trackStations[0]?.name || 'Estación Inicial';
+    const lastStation = trackStations[trackStations.length - 1]?.name || 'Estación Final';
+    
+    return {
+      ...track,
+      lineName: `Línea ${index + 1}`,
+      destination: trackStations.length > 0 ? `${firstStation} - ${lastStation}` : 'Ruta en construcción'
+    };
+  });
 
   return (
     <div className="bg-white bg-opacity-90 p-3 rounded-md shadow-md max-w-[260px] border border-gray-200">
       <div className="flex items-center mb-2">
         <Train className="h-4 w-4 mr-2 text-primary" />
-        <h3 className="text-xs font-bold border-b pb-1 w-full">Red de Metro Español</h3>
+        <h3 className="text-xs font-bold border-b pb-1 w-full">Red de Metro</h3>
       </div>
       
       <ul className="space-y-1 mb-2">
@@ -50,7 +50,7 @@ const TrackLegend: React.FC<TrackLegendProps> = ({ tracks }) => {
               />
               <span className="font-semibold">{track.lineName}</span>
             </div>
-            <div className="ml-4.5 text-gray-600 text-[9px] mt-0.5">
+            <div className="ml-4.5 text-gray-600 text-[9px] mt-0.5 truncate max-w-[220px]">
               {track.destination}
             </div>
           </li>

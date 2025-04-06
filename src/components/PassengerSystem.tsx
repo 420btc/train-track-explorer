@@ -219,6 +219,14 @@ const PassengerSystem: React.FC<PassengerSystemProps> = ({
       if (passengerInteractionRef.current) return;
       passengerInteractionRef.current = true;
       
+      // Si el tren no está en movimiento, no procesar interacciones de pasajeros
+      if (!isMoving) {
+        setTimeout(() => {
+          passengerInteractionRef.current = false;
+        }, 50);
+        return;
+      }
+      
       const currentTime = Date.now();
       let hasChanges = false;
       
@@ -238,8 +246,8 @@ const PassengerSystem: React.FC<PassengerSystemProps> = ({
             // Radio de entrega aumentado para mayor fiabilidad
             const deliveryRadius = settings.pickupRadius * 1.5;
             
-            if (distance <= deliveryRadius) {
-              // Passenger delivered
+            if (distance <= deliveryRadius && isMoving) {
+              // Passenger delivered - solo si el tren está en movimiento
               deliveryFn(passenger);
               hasChanges = true;
               return false; // Remove from array
@@ -249,10 +257,14 @@ const PassengerSystem: React.FC<PassengerSystemProps> = ({
           }
           
           // Check if passenger has expired (tiempo según dificultad)
-          if (currentTime - passenger.createdAt > settings.expirationTime) {
+          // Solo notificar expiración si el tren está en movimiento
+          if (currentTime - passenger.createdAt > settings.expirationTime && isMoving) {
             expiredFn(passenger);
             hasChanges = true;
             return false; // Remove from array
+          } else if (currentTime - passenger.createdAt > settings.expirationTime) {
+            // Si el tren no está en movimiento, eliminar silenciosamente
+            return false;
           }
           
           // Check if train is close enough to pick up passenger
@@ -266,7 +278,8 @@ const PassengerSystem: React.FC<PassengerSystemProps> = ({
           // Radio de recogida aumentado para mayor fiabilidad
           const enhancedPickupRadius = settings.pickupRadius * 2; // Duplicado para asegurar la recogida
           
-          if (distance <= enhancedPickupRadius) {
+          if (distance <= enhancedPickupRadius && isMoving) {
+            // Solo recoger pasajeros si el tren está en movimiento
             // Verificar si hay espacio en el tren para recoger pasajeros
             const currentPickedUpCount = pickedUpPassengers.length;
             
@@ -344,19 +357,19 @@ const PassengerSystem: React.FC<PassengerSystemProps> = ({
         const animX = Math.sin(time + passenger.animationOffset) * 2;
         const animY = Math.cos(time + passenger.animationOffset) * 2;
         
-        // Draw passenger (green dot, 1/3 the size of stations)
+        // Draw passenger (green dot, más pequeño para que se vean mejor los números)
         ctx.beginPath();
         ctx.arc(
           point.x + passenger.offsetX + animX, 
           point.y + passenger.offsetY + animY, 
-          4, // 4px radius (stations are 12px)
+          3, // 3px radius (reducido de 4px)
           0, 
           Math.PI * 2
         );
         ctx.fillStyle = '#22c55e'; // Green color
         ctx.fill();
         ctx.strokeStyle = '#166534'; // Darker green border
-        ctx.lineWidth = 1;
+        ctx.lineWidth = 0.8;
         ctx.stroke();
       });
       

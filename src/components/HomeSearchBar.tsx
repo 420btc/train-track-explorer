@@ -86,7 +86,7 @@ const HomeSearchBar: React.FC<HomeSearchBarProps> = ({ onLocationSelect }) => {
 
   return (
     <div className="w-full max-w-3xl bg-background/90 backdrop-blur-sm p-4 rounded-xl shadow-lg border border-primary/20">
-      <h2 className="text-xl font-bold text-center mb-3 text-primary">Elige tu destino</h2>
+      <h2 className="text-xl font-bold text-center mb-3 text-primary">Elige tu ciudad</h2>
       
       <form onSubmit={handleSearch} className="flex flex-col gap-4">
         <div className="flex gap-2">
