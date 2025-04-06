@@ -1272,9 +1272,19 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
   useEffect(() => {
     if (!autoMode) return;
     
+    // Asegurarse de que el tren esté en movimiento cuando se activa el modo automático
+    setTrainMoving(true);
+    
     // Calcular el intervalo de tiempo basado en la velocidad
     // Velocidad 1% = 2000ms (muy lento), Velocidad 100% = 100ms (muy rápido)
     const interval = Math.max(100, 2000 - (trainSpeed * 19));
+    
+    console.log("Iniciando modo automático con intervalo:", interval, "ms");
+    
+    // Mover el tren inmediatamente al activar el modo automático
+    if (selectedTrack) {
+      handleMoveTrainClick();
+    }
     
     // Crear un temporizador para mover el tren automáticamente
     const intervalId = setInterval(() => {
@@ -1421,6 +1431,7 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
     }, interval);
     
     return () => {
+      console.log("Limpiando intervalo del modo automático");
       clearInterval(intervalId);
       // Limpiar la ruta al desactivar el modo automático
       setAutoModePath([]);
