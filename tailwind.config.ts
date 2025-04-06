@@ -1,4 +1,3 @@
-
 import type { Config } from "tailwindcss";
 
 export default {
@@ -62,11 +61,7 @@ export default {
 					'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
 					border: 'hsl(var(--sidebar-border))',
 					ring: 'hsl(var(--sidebar-ring))'
-				},
-				// Train game specific colors
-				track: '#3b82f6', // Blue for train tracks
-				train: '#ef4444', // Red for train
-				station: '#fbbf24', // Yellow for stations
+				}
 			},
 			borderRadius: {
 				lg: 'var(--radius)',
@@ -89,17 +84,11 @@ export default {
 					to: {
 						height: '0'
 					}
-				},
-				'train-move': {
-					'0%': { transform: 'translateX(0) scale(1)' },
-					'50%': { transform: 'translateX(5px) scale(1.05)' },
-					'100%': { transform: 'translateX(0) scale(1)' }
 				}
 			},
 			animation: {
 				'accordion-down': 'accordion-down 0.2s ease-out',
-				'accordion-up': 'accordion-up 0.2s ease-out',
-				'train-move': 'train-move 0.5s ease-in-out'
+				'accordion-up': 'accordion-up 0.2s ease-out'
 			}
 		}
 	},
