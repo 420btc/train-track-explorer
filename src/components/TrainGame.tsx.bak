@@ -1,5 +1,5 @@
+```tsx
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import MiniMap from './MiniMap';
 import PassengerNotification from './PassengerNotification';
 import { 
   DEFAULT_COORDINATES, 
@@ -83,9 +83,6 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
   // Estado para mostrar lista de pasajeros
   const [showPassengersList, setShowPassengersList] = useState<boolean>(false);
   
-  // Estado para mostrar el minimapa
-  const [showMiniMap, setShowMiniMap] = useState<boolean>(false);
-  
   // Estado para la búsqueda
   const [searchQuery, setSearchQuery] = useState<string>('');
   
@@ -123,6 +120,8 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
   // Estado para la estación personal
   const [personalStationId, setPersonalStationId] = useState<string | null>(null);
 
+  // El reloj se ha movido a MainMenu.tsx
+
   // Obtener el contexto del juego
   const gameContext = useGame();
   const { 
@@ -133,6 +132,23 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
     stations: contextStations,
     setPersonalStationId: setPersonalStationIdContext
   } = gameContext;
+
+  // Efecto para actualizar el reloj cada segundo
+  useEffect(() => {
+    const updateClock = () => {
+      const now = new Date();
+      setCurrentTime(now.toLocaleTimeString());
+    };
+    
+    // Actualizar inmediatamente
+    updateClock();
+    
+    // Configurar intervalo para actualizar cada segundo
+    const intervalId = setInterval(updateClock, 1000);
+    
+    // Limpiar intervalo al desmontar
+    return () => clearInterval(intervalId);
+  }, []);
 
   // Función para establecer la estación personal
   const setPersonalStation = (stationId: string) => {
@@ -214,7 +230,7 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
           saveLevelProgress(updatedLevels);
         }
         
-        toast.info(`Nivel ${currentLevel.id}: ${currentLevel.name} - €${currentLevel.initialMoney} iniciales`);
+        toast.info(`Level ${currentLevel.id}: ${currentLevel.name} - €${currentLevel.initialMoney} initial`);
       }
       
       // El tutorial se mostrará después de que el mapa esté completamente cargado
@@ -222,7 +238,7 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
       // Esto se maneja en el useEffect que observa isLoading
     } catch (error) {
       console.error("Error initializing game:", error);
-      toast.error("Error al cargar el mapa");
+      toast.error("Error loading the map");
     } finally {
       setIsLoading(false);
       
@@ -247,12 +263,12 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
     setShowTutorial(false);
     
     if (!searchQuery.trim()) {
-      toast.error('Por favor, introduce una ubicación');
+      toast.error('Please enter a location');
       return;
     }
     
     setIsLoading(true);
-    toast.info('Buscando ubicación...');
+    toast.info('Searching location...');
     
     try {
       // Buscar la dirección y obtener coordenadas usando la función geocodeAddress
@@ -265,9 +281,9 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
       );
       
       if (isDefault) {
-        toast.info(`No se encontró "${searchQuery}". Usando ubicación predeterminada.`);
+        toast.info(`"${searchQuery}" not found. Using default location.`);
       } else {
-        toast.success(`Ubicación encontrada: ${searchQuery}`);
+        toast.success(`Location found: ${searchQuery}`);
       }
       
       // Inicializar el juego con las coordenadas
@@ -1315,7 +1331,7 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
             {/* Panel de control superpuesto (más alargado y mitad de altura) */}
             <div className="absolute bottom-8 left-0 right-0 flex justify-center items-center z-50 pointer-events-none">
               <div className="bg-background/85 backdrop-blur-md p-4 rounded-xl shadow-xl border border-primary/30 w-full max-w-[1080px] mx-4 pointer-events-auto">
-                <div className="flex flex-row items-center gap-6 justify-between h-[100px]">
+                <div className="flex flex-row items-center gap-6 justify-between h-[85px]">
                   {/* Sección 1: Información de pasajeros integrada con botones de control */}
                   <div className="flex items-center gap-2">
                     <PassengerInfo 
@@ -1339,38 +1355,6 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
                       
                       <div className="h-7 w-[1px] bg-border mx-1" />
                       
-                      <div className="flex flex-col">
-                        <span className="text-[10px] text-muted-foreground mb-1">Dificultad:</span>
-                        <div className="flex gap-1">
-                          <Button 
-                            onClick={() => setDifficulty('easy')}
-                            variant={difficulty === 'easy' ? "default" : "outline"}
-                            size="sm"
-                            className={`h-5 text-[10px] px-2 font-medium ${difficulty === 'easy' ? 'bg-green-600 hover:bg-green-700 shadow-md' : 'border-green-500/50'}`}
-                          >
-                            Fácil
-                          </Button>
-                          <Button 
-                            onClick={() => setDifficulty('medium')}
-                            variant={difficulty === 'medium' ? "default" : "outline"}
-                            size="sm"
-                            className={`h-5 text-[10px] px-2 font-medium ${difficulty === 'medium' ? 'bg-amber-600 hover:bg-amber-700 shadow-md' : 'border-amber-500/50'}`}
-                          >
-                            Medio
-                          </Button>
-                          <Button 
-                            onClick={() => setDifficulty('hard')}
-                            variant={difficulty === 'hard' ? "default" : "outline"}
-                            size="sm"
-                            className={`h-5 text-[10px] px-2 font-medium ${difficulty === 'hard' ? 'bg-red-600 hover:bg-red-700 shadow-md' : 'border-red-500/50'}`}
-                          >
-                            Difícil
-                          </Button>
-                        </div>
-                      </div>
-                      
-                      <div className="h-7 w-[1px] bg-border mx-1" />
-                      
                       <Button
                         onClick={() => setSeatsModalVisible(true)}
                         variant="outline"
@@ -1381,21 +1365,30 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
                         <Train className="h-3.5 w-3.5 mr-1" />
                         {pickedUpPassengers.length}/{trainCapacity}
                       </Button>
+                      <Button
+                        onClick={() => setShowPassengersList(!showPassengersList)}
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-[11px] px-2 border-blue-500/60 flex items-center justify-center hover:bg-blue-500/10 transition-colors"
+                      >
+                        <Users className="h-3.5 w-3.5 mr-1" />
+                        {showPassengersList ? 'Ocultar' : 'Ver'}
+                      </Button>
                     </div>
                   </div>
                   
                   {/* Separador vertical */}
-                  <div className="h-[80px] w-[2px] bg-gradient-to-b from-gray-200/30 via-gray-300/70 to-gray-200/30 rounded-full"></div>
+                  <div className="h-[65px] w-[2px] bg-gradient-to-b from-gray-200/30 via-gray-300/70 to-gray-200/30 rounded-full"></div>
                   
-                  {/* Sección 2: Control de Tren (ahora en el centro) */}
-                  <div className="flex-shrink-0 w-[320px] flex flex-col">
+                  {/* Sección 2: Control de Tren */}
+                  <div className="flex-shrink-0 w-[280px] flex flex-col">
                     <div className="flex justify-between items-center mb-2">
                       <h3 className="text-sm font-semibold text-primary">Control de Tren</h3>
                       <div className="text-xs text-muted-foreground bg-background/70 px-2 py-1 rounded-md border border-border/50">
                         {selectedTrack ? `Vía: ${selectedTrack.id}` : 'Selecciona vía'}
                       </div>
                     </div>
-                    <div className="flex gap-2 flex-col bg-background/80 p-2 rounded-md border border-border/50 shadow-sm">
+                    <div className="flex gap-2 flex-col">
                       <div className="flex gap-2">
                         <Button 
                           onClick={handleMoveTrainClick}
@@ -1456,40 +1449,88 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
                   </div>
                   
                   {/* Separador vertical */}
-                  <div className="h-[80px] w-[2px] bg-gradient-to-b from-gray-200/30 via-gray-300/70 to-gray-200/30 rounded-full"></div>
+                  <div className="h-[65px] w-[2px] bg-gradient-to-b from-gray-200/30 via-gray-300/70 to-gray-200/30 rounded-full"></div>
                   
-                  {/* Sección 3: Botones de visualización */}
-                  <div className="flex-shrink-0 w-[120px] flex flex-col gap-2 justify-center">
-                    <Button
-                      onClick={() => setShowMiniMap(true)}
-                      variant="outline"
-                      size="sm"
-                      className="h-7 text-[11px] px-2 border-blue-500/60 flex items-center justify-center hover:bg-blue-500/10 transition-colors"
-                      title="Ver minimapa"
-                    >
-                      <MapPin className="h-3.5 w-3.5 mr-1" />
-                      Mapa
-                    </Button>
-                    <Button
-                      onClick={() => setShowPassengersList(true)}
-                      variant="outline"
-                      size="sm"
-                      className="h-7 text-[11px] px-2 border-blue-500/60 flex items-center justify-center hover:bg-blue-500/10 transition-colors"
-                      title="Ver lista de pasajeros"
-                    >
-                      <Users className="h-3.5 w-3.5 mr-1" />
-                      Pasajeros
-                    </Button>
-                    <Button
+                  {/* Sección 3: Controles de mapa y dificultad */}
+                  <div className="flex-shrink-0 w-[220px] flex flex-col gap-2">
+                    <Button 
                       onClick={() => setMapStyle(mapStyle === 'street' ? 'satellite' : 'street')}
                       variant="outline"
                       size="sm"
-                      className="h-7 text-[11px] px-2 border-blue-500/60 flex items-center justify-center hover:bg-blue-500/10 transition-colors"
-                      title="Cambiar vista del mapa"
+                      className="w-full h-9 text-sm flex items-center justify-center gap-2"
                     >
-                      <MapPin className="h-3.5 w-3.5 mr-1" />
-                      {mapStyle === 'street' ? 'Satélite' : 'Calles'}
+                      <MapPin className="h-4 w-4" />
+                      {mapStyle === 'street' ? 'Ver Satélite' : 'Ver Calles'}
                     </Button>
+                    
+                    <div className="flex items-center justify-between text-sm bg-background/60 p-1.5 rounded-md">
+                      <span className="font-medium text-primary">Dificultad:</span>
+                      <div className="flex gap-1.5">
+                        <Button 
+                          onClick={() => setDifficulty('easy')}
+                          variant={difficulty === 'easy' ? "default" : "outline"}
+                          size="sm"
+                          className={`h-7 text-xs px-3 font-medium ${difficulty === 'easy' ? 'bg-green-600 hover:bg-green-700 shadow-md' : 'border-green-500/50'}`}
+                        >
+                          Fácil
+                        </Button>
+                        <Button 
+                          onClick={() => setDifficulty('medium')}
+                          variant={difficulty === 'medium' ? "default" : "outline"}
+                          size="sm"
+                          className={`h-7 text-xs px-3 font-medium ${difficulty === 'medium' ? 'bg-amber-600 hover:bg-amber-700 shadow-md' : 'border-amber-500/50'}`}
+                        >
+                          Medio
+                        </Button>
+                        <Button 
+                          onClick={() => setDifficulty('hard')}
+                          variant={difficulty === 'hard' ? "default" : "outline"}
+                          size="sm"
+                          className={`h-7 text-xs px-3 font-medium ${difficulty === 'hard' ? 'bg-red-600 hover:bg-red-700 shadow-md' : 'border-red-500/50'}`}
+                        >
+                          Difícil
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Separador vertical */}
+                  <div className="h-[65px] w-[2px] bg-gradient-to-b from-gray-200/30 via-gray-300/70 to-gray-200/30 rounded-full"></div>
+                  
+                  {/* Sección 4: Lista de pasajeros */}
+                  <div className="flex-grow max-w-[180px]">
+                    <div className="flex justify-between items-center mb-2 bg-background/60 p-1.5 rounded-md">
+                      <h3 className="text-sm font-semibold text-primary">Pasajeros</h3>
+                      <Button
+                        onClick={() => setShowPassengersList(!showPassengersList)}
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs px-2 border-blue-500/50"
+                      >
+                        <Users className="h-4 w-4 mr-1" />
+                        {showPassengersList ? 'Ocultar' : 'Mostrar'}
+                      </Button>
+                    </div>
+                    
+                    {showPassengersList && (
+                      <div className="absolute bottom-full left-0 right-0 mb-2 bg-background/95 backdrop-blur-md p-3 rounded-xl shadow-xl border border-primary/30 max-h-[250px] overflow-y-auto z-50">
+                        <div className="flex justify-between items-center mb-2 border-b border-border pb-2">
+                          <h3 className="text-base font-semibold text-primary">Lista de Pasajeros</h3>
+                          <Button
+                            onClick={() => setShowPassengersList(false)}
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0 rounded-full"
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        <PassengerList 
+                          activePassengers={activePassengers}
+                          pickedUpPassengers={pickedUpPassengers}
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1555,7 +1596,7 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
               
               setLevels(updatedLevels);
               saveLevelProgress(updatedLevels);
-              toast.success('¡Tutorial completado! Has desbloqueado el nivel 1.');
+              toast.success('Tutorial completed! You have unlocked level 1.');
             }
           }
           // Ya no es primera vez
@@ -1593,7 +1634,7 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
             }
             
             setShowLevelSelector(false);
-            toast.success(`Nivel ${level.id}: ${level.name} seleccionado - €${level.initialMoney} iniciales`);
+            toast.success(`Level ${level.id}: ${level.name} selected - €${level.initialMoney} initial`);
           }}
         />
       )}
@@ -1644,40 +1685,6 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
           initializeGame(coordinates);
         }}
       />
-
-      {/* Modal para el minimapa */}
-      <MiniMap 
-        tracks={tracks} 
-        stations={stations}
-        trainPosition={trainPosition}
-        isOpen={showMiniMap}
-        onClose={() => setShowMiniMap(false)}
-      />
-
-      {/* Modal para la lista de pasajeros */}
-      {showPassengersList && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-background rounded-xl shadow-xl border border-primary/30 w-full max-w-md overflow-hidden">
-            <div className="flex justify-between items-center p-3 border-b border-border">
-              <h3 className="text-lg font-semibold text-primary">Lista de Pasajeros</h3>
-              <Button
-                onClick={() => setShowPassengersList(false)}
-                variant="ghost"
-                size="sm"
-                className="h-8 w-8 p-0 rounded-full"
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-            <div className="p-4 max-h-[400px] overflow-y-auto">
-              <PassengerList 
-                activePassengers={activePassengers}
-                pickedUpPassengers={pickedUpPassengers}
-              />
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

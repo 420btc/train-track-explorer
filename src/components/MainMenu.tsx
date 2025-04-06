@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from './ui/button';
 import { Train } from 'lucide-react';
 import SimpleTrainAnimation from './SimpleTrainAnimation';
@@ -11,6 +11,20 @@ interface MainMenuProps {
 
 const MainMenu: React.FC<MainMenuProps> = ({ onStartGame }) => {
   const [showSearchBar, setShowSearchBar] = useState(false);
+  const [currentTime, setCurrentTime] = useState<string>('');
+
+  // Efecto para actualizar el reloj cada segundo
+  useEffect(() => {
+    const updateClock = () => {
+      const now = new Date();
+      setCurrentTime(now.toLocaleTimeString());
+    };
+    
+    updateClock(); // Actualizar inmediatamente
+    const intervalId = setInterval(updateClock, 1000);
+    
+    return () => clearInterval(intervalId); // Limpieza
+  }, []);
   return (
     <div className="relative h-screen w-screen overflow-hidden">
       {/* Fondo con gradiente que simula un paisaje español */}
@@ -53,6 +67,14 @@ const MainMenu: React.FC<MainMenuProps> = ({ onStartGame }) => {
             <div className="h-full w-[10px] bg-[#111111]"></div>
             <div className="h-full w-[10px] bg-[#111111]"></div>
           </div>
+        </div>
+      </div>
+      
+      {/* Reloj en tiempo real */}
+      <div className="absolute bottom-20 left-1/2 transform -translate-x-1/2 z-50">
+        <div className="bg-[#FF5722] hover:bg-[#E64A19] text-white font-bold py-2 px-6 rounded-full shadow-lg 
+        transition-colors duration-300 flex items-center justify-center text-lg">
+          {currentTime || '--:--:--'}
         </div>
       </div>
       
