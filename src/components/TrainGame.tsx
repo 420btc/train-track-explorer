@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import MiniMap from './MiniMap';
 import PassengerNotification from './PassengerNotification';
 import { 
   DEFAULT_COORDINATES, 
@@ -81,6 +82,9 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
   
   // Estado para mostrar lista de pasajeros
   const [showPassengersList, setShowPassengersList] = useState<boolean>(false);
+  
+  // Estado para mostrar el minimapa
+  const [showMiniMap, setShowMiniMap] = useState<boolean>(false);
   
   // Estado para la búsqueda
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -1346,13 +1350,24 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
                         {pickedUpPassengers.length}/{trainCapacity}
                       </Button>
                       <Button
-                        onClick={() => setShowPassengersList(!showPassengersList)}
+                        onClick={() => setShowMiniMap(true)}
                         variant="outline"
                         size="sm"
                         className="h-7 text-[11px] px-2 border-blue-500/60 flex items-center justify-center hover:bg-blue-500/10 transition-colors"
+                        title="Ver minimapa"
+                      >
+                        <MapPin className="h-3.5 w-3.5 mr-1" />
+                        Mapa
+                      </Button>
+                      <Button
+                        onClick={() => setShowPassengersList(true)}
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-[11px] px-2 border-blue-500/60 flex items-center justify-center hover:bg-blue-500/10 transition-colors"
+                        title="Ver lista de pasajeros"
                       >
                         <Users className="h-3.5 w-3.5 mr-1" />
-                        {showPassengersList ? 'Ocultar' : 'Ver'}
+                        Pasajeros
                       </Button>
                     </div>
                   </div>
@@ -1476,42 +1491,6 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
                   
                   {/* Separador vertical */}
                   <div className="h-[65px] w-[2px] bg-gradient-to-b from-gray-200/30 via-gray-300/70 to-gray-200/30 rounded-full"></div>
-                  
-                  {/* Sección 4: Lista de pasajeros */}
-                  <div className="flex-grow max-w-[180px]">
-                    <div className="flex justify-between items-center mb-2 bg-background/60 p-1.5 rounded-md">
-                      <h3 className="text-sm font-semibold text-primary">Pasajeros</h3>
-                      <Button
-                        onClick={() => setShowPassengersList(!showPassengersList)}
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs px-2 border-blue-500/50"
-                      >
-                        <Users className="h-4 w-4 mr-1" />
-                        {showPassengersList ? 'Ocultar' : 'Mostrar'}
-                      </Button>
-                    </div>
-                    
-                    {showPassengersList && (
-                      <div className="absolute bottom-full left-0 right-0 mb-2 bg-background/95 backdrop-blur-md p-3 rounded-xl shadow-xl border border-primary/30 max-h-[250px] overflow-y-auto z-50">
-                        <div className="flex justify-between items-center mb-2 border-b border-border pb-2">
-                          <h3 className="text-base font-semibold text-primary">Lista de Pasajeros</h3>
-                          <Button
-                            onClick={() => setShowPassengersList(false)}
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 w-7 p-0 rounded-full"
-                          >
-                            <X className="h-4 w-4" />
-                          </Button>
-                        </div>
-                        <PassengerList 
-                          activePassengers={activePassengers}
-                          pickedUpPassengers={pickedUpPassengers}
-                        />
-                      </div>
-                    )}
-                  </div>
                 </div>
               </div>
             </div>
@@ -1665,6 +1644,40 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
           initializeGame(coordinates);
         }}
       />
+
+      {/* Modal para el minimapa */}
+      <MiniMap 
+        tracks={tracks} 
+        stations={stations}
+        trainPosition={trainPosition}
+        isOpen={showMiniMap}
+        onClose={() => setShowMiniMap(false)}
+      />
+
+      {/* Modal para la lista de pasajeros */}
+      {showPassengersList && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-background rounded-xl shadow-xl border border-primary/30 w-full max-w-md overflow-hidden">
+            <div className="flex justify-between items-center p-3 border-b border-border">
+              <h3 className="text-lg font-semibold text-primary">Lista de Pasajeros</h3>
+              <Button
+                onClick={() => setShowPassengersList(false)}
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0 rounded-full"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="p-4 max-h-[400px] overflow-y-auto">
+              <PassengerList 
+                activePassengers={activePassengers}
+                pickedUpPassengers={pickedUpPassengers}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
