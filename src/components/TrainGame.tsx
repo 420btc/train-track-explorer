@@ -15,6 +15,7 @@ import {
   geocodeAddress,
   calculateDistance
 } from '@/lib/mapUtils';
+import { setGlobalTracks } from '@/lib/routeUtils';
 import { toast } from 'sonner';
 import GameStartButton from './GameStartButton';
 import { GameProvider, Passenger, Desire, GameEvent, GameMessage, useGame } from '@/contexts/GameContext';
@@ -73,9 +74,36 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
   
   // Estado para rastrear vías visitadas (evitar bucles)
   const [visitedTracks, setVisitedTracks] = useState<Set<string>>(new Set());
-
+  
+  // Mapa para contar cuántas veces se ha visitado cada vía
+  const [visitCountMap, setVisitCountMap] = useState<Map<string, number>>(new Map());
+  
   // Estado para el modo de exploración completa (recorrer todas las vías)
   const [exploreAllMode, setExploreAllMode] = useState<boolean>(false);
+  
+  // Estado para rastrear si se ha completado la exploración de todas las vías
+  const [explorationCompleted, setExplorationCompleted] = useState<boolean>(false);
+  
+  // Estado para almacenar las vías numeradas del 1 al 9 para acceso rápido
+  const [numberedTracks, setNumberedTracks] = useState<TrackSegment[]>([]);
+  
+  // Función para registrar una vía como visitada
+  const markTrackAsVisited = useCallback((trackId: string) => {
+    // Actualizar el conjunto de vías visitadas
+    setVisitedTracks(prev => {
+      const updated = new Set(prev);
+      updated.add(trackId);
+      return updated;
+    });
+    
+    // Actualizar el contador de visitas para esta vía
+    setVisitCountMap(prev => {
+      const updated = new Map(prev);
+      const currentCount = updated.get(trackId) || 0;
+      updated.set(trackId, currentCount + 1);
+      return updated;
+    });
+  }, []);
   
   // La dificultad ahora se gestiona desde el contexto del juego
   
@@ -189,6 +217,10 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
       const stationsList = generateStations(trackNetwork);
       setStations(stationsList);
       
+      // Inicializar las vías numeradas del 1 al 9 para acceso rápido
+      const tracksToNumber = trackNetwork.slice(0, 9);
+      setNumberedTracks(tracksToNumber);
+      
       // Inicializar la posición del tren en la primera vía
       if (trackNetwork.length > 0) {
         const firstTrack = trackNetwork[0];
@@ -300,47 +332,56 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
     return () => clearInterval(timer);
   }, [isLoading]);
   
-  // Actualizar objetivos del nivel actual
-  const updateCurrentLevelObjectives = () => {
-    // Usar el hook useGame para acceder al contexto del juego
-    const gameContext = useGame();
-    if (!gameContext) return;
-    
-    const { money, happiness, deliveredPassengers } = gameContext;
-    
-    const updatedLevels = updateLevelObjectives(
-      levels,
-      currentLevel.id,
-      [
-        { type: 'money', value: money },
-        { type: 'happiness', value: happiness },
-        { type: 'passengers', value: deliveredPassengers.length },
-        { type: 'time', value: gameTime }
-      ]
-    );
-    
-    setLevels(updatedLevels);
-    
-    // Actualizar nivel actual si ha cambiado
-    const newCurrentLevel = getCurrentLevel(updatedLevels);
-    if (newCurrentLevel && newCurrentLevel.id !== currentLevel.id) {
-      setCurrentLevel(newCurrentLevel);
-      // Solo mostrar tutorial si no estamos en modo búsqueda
-      if (!isSearchMode.current) {
-        setShowTutorial(true); // Mostrar tutorial del nuevo nivel
-      }
-    }
-  };
+  // Ya tenemos el contexto del juego declarado anteriormente (línea 153)
   
   // Actualizar objetivos cada 5 segundos
   useEffect(() => {
+    // No podemos usar hooks dentro de efectos o funciones
+    // Usamos el gameContext que ya está declarado en el componente
+    
+    // Función para actualizar objetivos del nivel actual usando el gameContext existente
+    const updateObjectives = () => {
+      if (!gameContext) return;
+      
+      const { money, happiness, deliveredPassengers } = gameContext;
+      
+      const updatedLevels = updateLevelObjectives(
+        levels,
+        currentLevel.id,
+        [
+          { type: 'money', value: money },
+          { type: 'happiness', value: happiness },
+          { type: 'passengers', value: deliveredPassengers.length },
+          { type: 'time', value: gameTime }
+        ]
+      );
+      
+      setLevels(updatedLevels);
+      
+      // Actualizar nivel actual si ha cambiado
+      const newCurrentLevel = getCurrentLevel(updatedLevels);
+      if (newCurrentLevel && newCurrentLevel.id !== currentLevel.id) {
+        setCurrentLevel(newCurrentLevel);
+        // Solo mostrar tutorial si no estamos en modo búsqueda
+        if (!isSearchMode.current) {
+          setShowTutorial(true); // Mostrar tutorial del nuevo nivel
+        }
+      }
+    };
+    
+    // Ejecutar inmediatamente al montar el componente
+    if (!isLoading) {
+      updateObjectives();
+    }
+    
+    // Configurar intervalo para actualizaciones periódicas
     const interval = setInterval(() => {
       if (isLoading) return;
-      updateCurrentLevelObjectives();
+      updateObjectives();
     }, 5000);
     
     return () => clearInterval(interval);
-  }, [isLoading, currentLevel, levels]);
+  }, [isLoading, currentLevel, levels, gameContext, gameTime]);
   
   // Seleccionar un nivel
   const handleSelectLevel = (level: typeof levels[0]) => {
@@ -392,46 +433,77 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
   const moveTrainAuto = useCallback(() => {
     // Si no hay vía seleccionada o la vía está vacía
     if (!selectedTrack || selectedTrack.path.length === 0) {
-      // Si estamos en modo exploración completa, buscar una vía no visitada
+      // Si estamos en modo exploración completa, buscar una vía no visitada o menos visitada
       if (exploreAllMode) {
-        // Buscar vías no visitadas
-        const unvisitedTracks = tracks.filter(track => !visitedTracks.has(track.id));
-        
-        if (unvisitedTracks.length > 0) {
-          // Seleccionar la vía no visitada más cercana
-          let closestUnvisitedTrack = null;
-          let minDistance = Infinity;
+        // Obtener todas las vías y calcular su prioridad para exploración
+        const tracksWithPriority = tracks.map(track => {
+          // Contar cuántas veces se ha visitado esta vía
+          const visitCount = visitedTracks instanceof Set && visitedTracks.has(track.id) ? 1 : 0;
           
-          unvisitedTracks.forEach(track => {
-            // Calcular distancia al inicio de la vía
-            const startDistance = calculateDistance(
-              trainPosition,
-              track.path[0]
-            );
-            
-            if (startDistance < minDistance) {
-              minDistance = startDistance;
-              closestUnvisitedTrack = track;
-            }
+          // Calcular distancia al inicio y al final de la vía
+          const startDistance = calculateDistance(trainPosition, track.path[0]);
+          const endDistance = calculateDistance(trainPosition, track.path[track.path.length - 1]);
+          
+          // Usar la menor distancia (inicio o final)
+          const distance = Math.min(startDistance, endDistance);
+          
+          // Añadir un factor aleatorio (entre 0 y 0.3) para evitar patrones predecibles
+          const randomFactor = Math.random() * 0.3;
+          
+          // Calcular prioridad: 
+          // - Las vías no visitadas tienen prioridad máxima (100)
+          // - Las vías visitadas tienen prioridad basada en la distancia
+          // - El factor aleatorio ayuda a romper empates
+          const priority = visitCount === 0 
+            ? 100 + randomFactor - (distance * 0.5) // Vías no visitadas: prioridad máxima
+            : 10 - (distance * 2) + randomFactor;   // Vías visitadas: prioridad baja
+          
+          return { track, priority, visitCount, distance };
+        });
+        
+        // Ordenar por prioridad (mayor primero)
+        tracksWithPriority.sort((a, b) => b.priority - a.priority);
+        
+        // Verificar si hay vías no visitadas
+        const hasUnvisitedTracks = tracksWithPriority.some(item => item.visitCount === 0);
+        
+        // Seleccionar una vía con cierta aleatoriedad para evitar bucles
+        // Si hay vías no visitadas, elegir entre las mejores no visitadas
+        // Si todas han sido visitadas, elegir con más aleatoriedad
+        const poolSize = hasUnvisitedTracks ? 3 : 5;
+        const selectionPool = tracksWithPriority.slice(0, Math.min(poolSize, tracksWithPriority.length));
+        const selectedOption = selectionPool[Math.floor(Math.random() * selectionPool.length)];
+        
+        if (selectedOption) {
+          const trackToExplore = selectedOption.track;
+          
+          // Marcar la vía como visitada
+          setVisitedTracks(prev => {
+            const newSet = new Set(prev);
+            newSet.add(trackToExplore.id);
+            return newSet;
           });
           
-          if (closestUnvisitedTrack) {
-            // Marcar la vía como visitada
-            const newVisitedTracks = new Set(visitedTracks);
-            newVisitedTracks.add(closestUnvisitedTrack.id);
-            setVisitedTracks(newVisitedTracks);
-            
-            // Seleccionar la nueva vía
-            setSelectedTrack(closestUnvisitedTrack);
-            setCurrentTrackId(closestUnvisitedTrack.id);
-            setIsReversed(false);
-            setCurrentPathIndex(0);
-            setTrainPosition(closestUnvisitedTrack.path[0]);
-            setTrainMoving(true);
-            
-            toast.success(`Explorando nueva vía: ${closestUnvisitedTrack.id}`);
-            return;
+          // Registrar información detallada para depuración
+          console.log(`Explorando vía ${trackToExplore.id} con prioridad ${selectedOption.priority.toFixed(2)}`);
+          console.log(`- Visitas: ${selectedOption.visitCount}, Distancia: ${selectedOption.distance.toFixed(2)}`);
+          console.log(`- Vías no visitadas restantes: ${hasUnvisitedTracks ? tracksWithPriority.filter(t => t.visitCount === 0).length : 0}`);
+          
+          // Seleccionar la nueva vía
+          setSelectedTrack(trackToExplore);
+          setCurrentTrackId(trackToExplore.id);
+          setIsReversed(false);
+          setCurrentPathIndex(0);
+          setTrainPosition(trackToExplore.path[0]);
+          setTrainMoving(true);
+          
+          // Mostrar mensaje diferente según si la vía ha sido visitada o no
+          if (selectedOption.visitCount === 0) {
+            toast.success(`Explorando nueva vía: ${trackToExplore.id}`);
+          } else {
+            toast.info(`Revisitando vía: ${trackToExplore.id}`);
           }
+          return;
         }
         
         // Si no hay más vías sin visitar, mostrar mensaje de éxito
@@ -441,22 +513,76 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
         return;
       }
       
-      // Modo automático normal: buscar la vía más cercana
-      const closestTrackId = findClosestTrack(trainPosition, tracks);
-      if (closestTrackId) {
-        const nextTrack = tracks.find(t => t.id === closestTrackId);
-        if (nextTrack) {
-          // Marcar la vía como visitada
-          const newVisitedTracks = new Set(visitedTracks);
-          newVisitedTracks.add(nextTrack.id);
-          setVisitedTracks(newVisitedTracks);
+          // SIMPLIFICADO: Modo automático que prioriza vías no visitadas
+      // Dividir las vías en dos grupos: no visitadas y visitadas
+      const unvisitedTracks = tracks.filter(track => !visitedTracks.has(track.id));
+      const visitedTracks = tracks.filter(track => visitedTracks.has(track.id));
+      
+      // Decidir qué grupo de vías usar
+      const tracksToConsider = unvisitedTracks.length > 0 ? unvisitedTracks : tracks;
+      
+      // Calcular distancia y prioridad para cada vía
+      const tracksWithPriority = tracksToConsider.map(track => {
+        // Calcular distancia al inicio y final de la vía (usar la menor)
+        const distanceToStart = calculateDistance(trainPosition, track.path[0]);
+        const distanceToEnd = calculateDistance(trainPosition, track.path[track.path.length - 1]);
+        const distance = Math.min(distanceToStart, distanceToEnd);
+        
+        // Añadir un factor aleatorio para evitar patrones predecibles
+        const randomFactor = Math.random() * 0.5;
+        
+        // Prioridad simple: vías no visitadas tienen prioridad máxima
+        const isUnvisited = !visitedTracks.has(track.id);
+        const priority = isUnvisited ? 
+          100 + randomFactor - (distance * 0.1) : // No visitada: prioridad alta
+          10 + randomFactor - (distance * 0.5);   // Visitada: prioridad baja
+        
+        return { track, priority, isUnvisited, distance };
+      });
+      
+      // Ordenar por prioridad (mayor primero)
+      tracksWithPriority.sort((a, b) => b.priority - a.priority);
+      
+      // Seleccionar una de las mejores opciones (con algo de aleatoriedad)
+      const poolSize = unvisitedTracks.length > 0 ? 3 : 5; // Más opciones si todas han sido visitadas
+      const selectionPool = tracksWithPriority.slice(0, Math.min(poolSize, tracksWithPriority.length));
+      const selectedOption = selectionPool[Math.floor(Math.random() * selectionPool.length)];
+      
+      if (selectedOption) {
+        const nextTrack = selectedOption.track;
+        
+        // Buscar un camino conectado desde la posición actual hasta la vía seleccionada
+        // Esto es crucial para evitar teleportaciones
+        let pathToTrack = null;
+        if (selectedTrack) {
+          pathToTrack = findPathBetweenTracks(selectedTrack, nextTrack);
+        }
+        
+        if (pathToTrack && pathToTrack.length > 0) {
+          // Hay un camino conectado, seguirlo
+          console.log(`Encontrado camino conectado a vía ${nextTrack.id} (${pathToTrack.length} segmentos)`);
+          setAutoModePath(pathToTrack);
+          setAutoModePathIndex(0);
           
-          setSelectedTrack(nextTrack);
-          setCurrentTrackId(nextTrack.id);
-          setIsReversed(false);
-          setCurrentPathIndex(0);
-          setTrainPosition(nextTrack.path[0]);
-          setTrainMoving(true);
+          // Marcar la vía como visitada
+          setVisitedTracks(prev => {
+            const newSet = new Set(prev);
+            newSet.add(nextTrack.id);
+            return newSet;
+          });
+          
+          // Mostrar mensaje informativo
+          const statusText = selectedOption.isUnvisited ? 
+            `Explorando nueva vía: ${nextTrack.id}` : 
+            `Revisitando vía: ${nextTrack.id}`;
+          toast.info(statusText);
+          return;
+        } else {
+          // No hay camino conectado, buscar otra vía
+          console.log(`No hay camino conectado a vía ${nextTrack.id}, buscando alternativa...`);
+          
+          // Si no hay camino, simplemente seguir en la vía actual
+          handleMoveTrainClick();
           return;
         }
       }
@@ -469,7 +595,12 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
     const isAtEnd = !isReversed && currentPathIndex >= selectedTrack.path.length - 1;
     const isAtStart = isReversed && currentPathIndex <= 0;
     
+    // Guardar la posición actual para mantener la continuidad visual
+    const currentPosition = trainPosition;
+    
     if (isAtEnd || isAtStart) {
+      // Registrar la posición exacta donde el tren llegó al final/inicio
+      console.log(`Tren en ${isAtEnd ? 'final' : 'inicio'} de vía ${selectedTrack.id} en posición:`, currentPosition);
       // Marcar la vía actual como visitada
       if (!visitedTracks.has(selectedTrack.id)) {
         const newVisitedTracks = new Set(visitedTracks);
@@ -549,9 +680,11 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
           
           // Si no estamos en modo exploración o no hay vías no visitadas, seguir con la vía conectada
           // Marcar la vía como visitada
-          const newVisitedTracks = new Set(visitedTracks);
-          newVisitedTracks.add(nextTrack.id);
-          setVisitedTracks(newVisitedTracks);
+          setVisitedTracks(prev => {
+            const newSet = new Set(prev);
+            newSet.add(nextTrack.id);
+            return newSet;
+          });
           
           // Actualizar la vía seleccionada
           setSelectedTrack(nextTrack);
@@ -654,19 +787,22 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
             return;
           }
         } else {
-          // Si no hay más vías cercanas, cambiar de dirección inmediatamente
-          toast.info("Final de vía detectado. Cambiando dirección automáticamente...");
+          // Si no hay más vías cercanas, cambiar de dirección y esperar 5 segundos
+          toast.info("Final de vía detectado. Cambiando dirección en 5 segundos...");
           
-          // Invertir la dirección del tren
-          const newDirection = !isReversed;
-          setIsReversed(newDirection);
+          // Programar el cambio de dirección después de 5 segundos
+          setTimeout(() => {
+            // Invertir la dirección del tren
+            setIsReversed(!isReversed);
+            
+            // Establecer el índice de inicio según la nueva dirección
+            const newIndex = isReversed ? selectedTrack.path.length - 1 : 0;
+            setCurrentPathIndex(newIndex);
+            setTrainPosition(selectedTrack.path[newIndex]);
+            
+            toast.success("Dirección cambiada. Continuando en sentido " + (isReversed ? "inverso" : "normal"));
+          }, 5000);
           
-          // Establecer el índice de inicio según la nueva dirección
-          const newIndex = newDirection ? selectedTrack.path.length - 1 : 0;
-          setCurrentPathIndex(newIndex);
-          setTrainPosition(selectedTrack.path[newIndex]);
-          
-          toast.success("Dirección cambiada. Continuando en sentido " + (newDirection ? "inverso" : "normal"));
           return;
         }
       }
@@ -718,112 +854,7 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
     }
   }, [autoMode, selectedTrack, trainMoving, activePassengers, pickedUpPassengers]);
   
-  // Efecto para manejar el movimiento automático del tren
-  useEffect(() => {
-    let intervalId: NodeJS.Timeout | null = null;
-    
-    if (autoMode && selectedTrack) {
-      // Configurar un intervalo para mover el tren automáticamente
-      // La velocidad del intervalo depende de la velocidad del tren
-      const intervalSpeed = Math.max(50, 500 - trainSpeed * 4); // Entre 50ms y 500ms
-      
-      intervalId = setInterval(() => {
-        // Mover el tren automáticamente
-        if (selectedTrack && trainMoving) {
-          // Calcular el siguiente índice basado en la dirección actual
-          let nextIndex;
-          if (!isReversed) {
-            // Movimiento normal (hacia adelante)
-            nextIndex = currentPathIndex + 1;
-          } else {
-            // Movimiento inverso (hacia atrás)
-            nextIndex = currentPathIndex - 1;
-          }
-          
-          // Verificar si hemos llegado al final o al inicio de la vía
-          const isAtEnd = !isReversed && nextIndex >= selectedTrack.path.length;
-          const isAtStart = isReversed && nextIndex < 0;
-          
-          if (isAtEnd || isAtStart) {
-            // Buscar una vía conectada
-            const connectingInfo = findConnectingTrack(selectedTrack, tracks, isAtEnd);
-            
-            if (connectingInfo) {
-              // Encontramos una vía conectada
-              const nextTrack = tracks.find(t => t.id === connectingInfo.trackId);
-              if (nextTrack) {
-                // Actualizar la vía seleccionada
-                setSelectedTrack(nextTrack);
-                setCurrentTrackId(nextTrack.id);
-                setIsReversed(connectingInfo.reversed);
-                
-                // Establecer el índice inicial en la nueva vía
-                setCurrentPathIndex(connectingInfo.startIndex);
-                setTrainPosition(nextTrack.path[connectingInfo.startIndex]);
-                
-                toast.success(`Conectando con vía ${nextTrack.id}`);
-                return;
-              }
-            } else {
-              // Si no hay conexión, cambiar de dirección automáticamente
-              const newDirection = !isReversed;
-              setIsReversed(newDirection);
-              
-              // Establecer el índice de inicio según la nueva dirección
-              const newIndex = newDirection ? selectedTrack.path.length - 1 : 0;
-              setCurrentPathIndex(newIndex);
-              setTrainPosition(selectedTrack.path[newIndex]);
-              
-              toast.success("Dirección cambiada. Continuando en sentido " + (newDirection ? "inverso" : "normal"));
-              return;
-            }
-          } else {
-            // Movimiento normal dentro de la misma vía
-            setCurrentPathIndex(nextIndex);
-            setTrainPosition(selectedTrack.path[nextIndex]);
-          }
-        }
-      }, intervalSpeed);
-      
-      // Asegurarse de que el tren esté en movimiento
-      if (!trainMoving) {
-        setTrainMoving(true);
-      }
-    }
-    
-    // Limpiar el intervalo cuando se desmonta el componente o cambia el modo automático
-    return () => {
-      if (intervalId) {
-        clearInterval(intervalId);
-      }
-    };
-  }, [autoMode, selectedTrack, trainSpeed, currentPathIndex, isReversed, trainMoving, tracks]);
-  
-  // Función para activar/desactivar el modo de exploración completa
-  const toggleExploreAllMode = useCallback(() => {
-    // Solo se puede activar si el modo automático está activo
-    if (!autoMode) {
-      toast.error('Activa primero el piloto automático');
-      return;
-    }
-    
-    const newExploreAllMode = !exploreAllMode;
-    setExploreAllMode(newExploreAllMode);
-    
-    // Reiniciar el registro de vías visitadas al activar el modo
-    if (newExploreAllMode) {
-      // Marcar la vía actual como visitada si existe
-      const newVisitedTracks = new Set<string>();
-      if (selectedTrack) {
-        newVisitedTracks.add(selectedTrack.id);
-      }
-      setVisitedTracks(newVisitedTracks);
-      
-      toast.success('Modo exploración completa activado. El tren recorrerá todas las vías del mapa.');
-    } else {
-      toast.info('Modo exploración completa desactivado');
-    }
-  }, [autoMode, exploreAllMode, selectedTrack]);
+
 
 
 
@@ -1105,10 +1136,26 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
     setCurrentTrackId(trackId);
   }, []);
 
+  // Referencia para almacenar el ID del intervalo del modo automático
+  const autoModeIntervalRef = useRef<number | null>(null);
+
   // Manejar el cambio de velocidad
   const handleSpeedChange = useCallback((speed: number) => {
+    console.log(`Cambiando velocidad del tren a: ${speed}%`);
     setTrainSpeed(speed);
-  }, []);
+    
+    // Si estamos en modo automático, reiniciar el intervalo con la nueva velocidad
+    if (autoMode && autoModeIntervalRef.current !== null) {
+      console.log("Reiniciando intervalo del modo automático con nueva velocidad");
+      // Limpiar el intervalo anterior
+      clearInterval(autoModeIntervalRef.current);
+      autoModeIntervalRef.current = null;
+      
+      // Forzar la actualización del efecto del modo automático
+      setAutoMode(false);
+      setTimeout(() => setAutoMode(true), 50);
+    }
+  }, [autoMode]);
 
 
 
@@ -1142,61 +1189,108 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
         // Encontramos una vía conectada
         const nextTrack = tracks.find(t => t.id === connectingInfo.trackId);
         if (nextTrack) {
+          // Actualizar la vía seleccionada sin teleportar el tren
+          // Guardar la posición actual para mantener la continuidad visual
+          const currentPosition = trainPosition;
+          
           // Actualizar la vía seleccionada
           setSelectedTrack(nextTrack);
-          setCurrentPathIndex(0);
-          setTrainPosition(nextTrack.path[0]);
           setCurrentTrackId(nextTrack.id);
-          setIsReversed(false); // Reiniciar dirección al seleccionar una nueva vía
-          toast.success(`Vía seleccionada: ${nextTrack.id}`);
-        }
-      }
-      
-      // Si no hay conexión, pero estamos en modo automático, buscar la vía más cercana
-      if (autoMode) {
-        const closestTrackId = findClosestTrack(trainPosition, tracks);
-        if (closestTrackId && closestTrackId !== selectedTrack.id) {
-          // Encontrar el objeto de vía completo a partir del ID
-          const nextTrack = tracks.find(t => t.id === closestTrackId);
-          if (nextTrack) {
-            // Actualizar la vía seleccionada
-            setSelectedTrack(nextTrack);
-            setCurrentTrackId(nextTrack.id);
-            setIsReversed(false);
-            
-            // Establecer el índice inicial en la nueva vía
+          
+          // Si la conexión es al inicio de la nueva vía
+          if (connectingInfo.isAtStart) {
             setCurrentPathIndex(0);
-            setTrainPosition(nextTrack.path[0]);
-            
-            toast.success(`Modo automático: Cambiando a vía ${nextTrack.id}`);
-            return;
+            // Mantener la posición actual para evitar teleportación
+            // pero actualizar ligeramente para que coincida con el inicio de la nueva vía
+            setTrainPosition({
+              ...nextTrack.path[0],
+              // Ajuste mínimo para mantener la continuidad visual
+              lat: nextTrack.path[0].lat + (currentPosition.lat - nextTrack.path[0].lat) * 0.1,
+              lng: nextTrack.path[0].lng + (currentPosition.lng - nextTrack.path[0].lng) * 0.1
+            });
+            setIsReversed(false);
+          } else {
+            // La conexión es al final de la nueva vía
+            const lastIndex = nextTrack.path.length - 1;
+            setCurrentPathIndex(lastIndex);
+            // Mantener la posición actual para evitar teleportación
+            // pero actualizar ligeramente para que coincida con el final de la nueva vía
+            setTrainPosition({
+              ...nextTrack.path[lastIndex],
+              // Ajuste mínimo para mantener la continuidad visual
+              lat: nextTrack.path[lastIndex].lat + (currentPosition.lat - nextTrack.path[lastIndex].lat) * 0.1,
+              lng: nextTrack.path[lastIndex].lng + (currentPosition.lng - nextTrack.path[lastIndex].lng) * 0.1
+            });
+            setIsReversed(true);
           }
+          
+          toast.success(`Continuando a vía conectada: ${nextTrack.id}`);
         }
       }
       
-      // Si no hay conexión, mostrar mensaje y detener el tren
+      // ELIMINADA LA SECCIÓN QUE CAUSABA TELEPORTACIÓN
+      // Ya no buscamos la vía más cercana cuando no hay conexión
+      // En su lugar, siempre cambiaremos de dirección
+      
+      // Si no hay conexión, mostrar mensaje y manejar la situación
       if (isAtEnd) {
         toast.info("El tren ha llegado al final de la vía y no hay conexión disponible");
       } else {
         toast.info("El tren ha llegado al inicio de la vía y no hay conexión disponible");
       }
       
-      // Si estamos en modo automático, cambiar de dirección automáticamente
-      if (autoMode) {
-        // Cambiar la dirección del tren
-        setIsReversed(!isReversed);
-        toast.info("Cambiando dirección automáticamente");
-        
-        // Ajustar el índice para que el tren comience a moverse en la dirección opuesta
-        if (isAtEnd) {
-          setCurrentPathIndex(selectedTrack.path.length - 2);
-          setTrainPosition(selectedTrack.path[selectedTrack.path.length - 2]);
-        } else {
-          setCurrentPathIndex(1);
-          setTrainPosition(selectedTrack.path[1]);
-        }
-        return;
+      // Registrar esta vía como visitada para evitar volver a ella frecuentemente
+      if (selectedTrack) {
+        // Registrar múltiples veces para penalizarla más en futuras selecciones
+        markTrackAsVisited(selectedTrack.id);
+        markTrackAsVisited(selectedTrack.id);
+        console.log(`Vía sin salida ${selectedTrack.id} penalizada con visitas adicionales`);
       }
+      
+      // SIEMPRE cambiar de dirección automáticamente cuando se llega al final de una vía sin conexión
+      // Esto evita que el tren se quede atascado o vuelva al punto de partida
+      
+      // Registrar la vía actual como visitada para evitar bucles
+      if (selectedTrack) {
+        // Actualizar el conjunto de vías visitadas
+        const newVisitedTracks = new Set(visitedTracks);
+        newVisitedTracks.add(selectedTrack.id);
+        setVisitedTracks(newVisitedTracks);
+        
+        // Registrar esta vía como visitada varias veces si es un callejón sin salida
+        // Esto reduce su prioridad para futuras exploraciones
+        console.log(`Vía sin salida ${selectedTrack.id} registrada como visitada al cambiar dirección`);
+        
+        // Buscar una vía alternativa para explorar después de cambiar de dirección
+        // Esto ayuda a evitar que el tren se quede atascado en bucles
+        setTimeout(() => {
+          // Solo buscar una nueva vía si seguimos en modo automático
+          if (autoMode) {
+            console.log("Buscando nueva vía para explorar después de cambiar dirección...");
+            // Este timeout permite que el tren cambie de dirección primero
+            // y luego busque una nueva vía para explorar
+          }
+        }, 2000);
+      }
+      
+      // Cambiar la dirección del tren
+      setIsReversed(!isReversed);
+      toast.info("Cambiando dirección automáticamente");
+      
+      // NO resetear la ruta automática para mantener la continuidad
+      // El tren debe seguir su ruta original, solo cambiando de dirección
+      
+      // IMPORTANTE: NO cambiar la posición del tren al cambiar de dirección
+      // Esto evita la teleportación y mantiene el tren exactamente donde está
+      // Solo cambiamos la dirección y dejamos que el tren continúe su movimiento
+      // en la dirección opuesta desde su posición actual
+      
+      // El tren ya está en la posición correcta (final o inicio de la vía)
+      // No necesitamos cambiar su posición, solo la dirección de movimiento
+      console.log(`Tren permanece en posición actual: ${JSON.stringify(trainPosition)} y cambia dirección`);
+      
+      // Mantener el índice actual para que el tren continúe desde donde está
+      return;
       
       return;
     }
@@ -1220,6 +1314,7 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
   }, []);
   
   // Función para encontrar la mejor estación para recoger pasajeros
+  // Prioriza estaciones con más pasajeros esperando y menor tiempo de espera
   const findBestStationToPickup = useCallback(() => {
     if (!stations || stations.length === 0 || !trainPosition) return null;
     
@@ -1233,11 +1328,12 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
     
     if (stationsWithPassengers.length === 0) return null;
     
-    // Encontrar la estación más cercana con pasajeros
-    let closestStation = null;
-    let minDistance = Infinity;
-    
-    stationsWithPassengers.forEach(station => {
+    // Calcular puntuación para cada estación basada en:
+    // 1. Distancia (menor distancia = mayor puntuación)
+    // 2. Número de pasajeros esperando (más pasajeros = mayor puntuación)
+    // 3. Tiempo de espera de los pasajeros (más tiempo = mayor prioridad)
+    const stationScores = stationsWithPassengers.map(station => {
+      // Calcular distancia
       const distance = calculateHaversineDistance(
         trainPosition.lat, 
         trainPosition.lng, 
@@ -1245,25 +1341,106 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
         station.position.lng
       );
       
-      if (distance < minDistance) {
-        minDistance = distance;
-        closestStation = station;
+      // Contar pasajeros en esta estación
+      const passengers = activePassengers.filter(p => 
+        !p.isPickedUp && p.origin.id === station.id
+      );
+      
+      // Calcular tiempo promedio de espera (en ms)
+      const now = Date.now();
+      const avgWaitTime = passengers.reduce((sum, p) => sum + (now - p.createdAt), 0) / passengers.length;
+      
+      // Calcular puntuación mejorada:
+      // Factor de distancia: mayor puntuación para estaciones más cercanas
+      // Usamos una función exponencial para penalizar más las distancias grandes
+      const distanceScore = Math.exp(-distance / 10000) * 5; // Escala de 0 a 5 puntos
+      
+      // Factor de pasajeros: mayor puntuación para estaciones con más pasajeros
+      // Aumentamos el peso para priorizar estaciones con muchos pasajeros
+      const passengerScore = passengers.length * 3; // Cada pasajero vale 3 puntos
+      
+      // Factor de tiempo de espera: mayor puntuación para pasajeros que llevan esperando más tiempo
+      // Usamos una función logística para dar más importancia a tiempos de espera largos
+      const waitTimeScore = Math.min(15, Math.log10(1 + avgWaitTime / 1000) * 5); // Máximo 15 puntos
+      
+      // Verificar si hay un camino conectado a esta estación desde la vía actual
+      let connectionScore = 0;
+      if (selectedTrack) {
+        // Encontrar la vía más cercana a la estación
+        const nearestTrackId = findClosestTrack(station.position, tracks);
+        if (nearestTrackId) {
+          // Buscar el objeto TrackSegment correspondiente al ID
+          const nearestTrackObj = tracks.find(t => t.id === nearestTrackId);
+          if (nearestTrackObj) {
+            // Verificar si hay un camino desde la vía actual hasta la vía cercana a la estación
+            const hasPath = findPathBetweenTracks(selectedTrack, nearestTrackObj) !== null;
+            // Si hay un camino conectado, dar una bonificación importante
+            connectionScore = hasPath ? 20 : 0;
+            
+            if (hasPath) {
+              console.log(`Estación ${station.id} tiene un camino conectado desde la vía actual`);
+            }
+          }
+        }
       }
+      
+      // Factor aleatorio para evitar que el tren siempre elija la misma estación
+      // Este factor es pequeño para no interferir demasiado con la lógica principal
+      const randomFactor = Math.random() * 0.5;
+      
+      // Calculamos la puntuación total, priorizando estaciones conectadas
+      const totalScore = distanceScore + passengerScore + waitTimeScore + connectionScore + randomFactor;
+      
+      // Devolver la estación y su puntuación para ordenar
+      return {
+        station,
+        score: totalScore,
+        // Incluir detalles para depuración
+        details: {
+          distance,
+          distanceScore,
+          passengerCount: passengers.length,
+          passengerScore,
+          avgWaitTime,
+          waitTimeScore,
+          randomFactor
+        }
+      };
     });
     
-    return closestStation;
+    // Ordenar por puntuación y devolver la mejor estación
+    stationScores.sort((a, b) => b.score - a.score);
+    
+    // Mostrar información de depuración en la consola para las 3 mejores estaciones
+    if (stationScores.length > 0) {
+      console.log("Mejores estaciones para recoger pasajeros:");
+      stationScores.slice(0, Math.min(3, stationScores.length)).forEach((item, index) => {
+        console.log(`${index + 1}. ${item.station.name} - Puntuación: ${item.score.toFixed(2)}`, item.details);
+      });
+    }
+    
+    return stationScores.length > 0 ? stationScores[0].station : null;
   }, [stations, trainPosition, activePassengers]);
   
   // Función para encontrar la mejor vía para llegar a una estación
   const findBestTrackToStation = useCallback((targetStation: Station) => {
     if (!targetStation || !tracks || tracks.length === 0 || !trainPosition) return null;
     
-    // Encontrar la vía más cercana a la estación objetivo
-    let closestTrack = null;
-    let minDistance = Infinity;
+    // Encontrar la vía más cercana a la estación objetivo que no haya sido visitada recientemente
+    // o que tenga la mejor puntuación considerando distancia y si ha sido visitada
+    let bestTrack = null;
+    let bestScore = -Infinity;
+    
+    // Calcular el número total de vías visitadas para ajustar la penalización
+    const visitedCount = visitedTracks.size;
+    const totalTracks = tracks.length;
+    const visitedRatio = visitedCount / totalTracks;
     
     tracks.forEach(track => {
       // Calcular la distancia desde cada punto de la vía a la estación
+      // Calcular la distancia mínima entre la estación y cualquier punto de la vía
+      let trackMinDistance = Infinity;
+      
       track.path.forEach(point => {
         const distance = calculateHaversineDistance(
           point.lat,
@@ -1272,15 +1449,68 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
           targetStation.position.lng
         );
         
-        if (distance < minDistance) {
-          minDistance = distance;
-          closestTrack = track;
+        if (distance < trackMinDistance) {
+          trackMinDistance = distance;
         }
       });
+      
+      // Calcular puntuación basada en:
+      // 1. Distancia inversa (menor distancia = mayor puntuación)
+      // 2. Penalización si la vía ha sido visitada recientemente (evitar bucles)
+      const distanceScore = 1 / (trackMinDistance + 0.1); // Evitar división por cero
+      
+      // Penalizar vías visitadas basado en el número de veces que han sido visitadas
+      let visitedPenalty = 0;
+      const visitCount = visitCountMap.get(track.id) || 0;
+      
+      if (visitCount > 0) {
+        // Penalización MUCHO MÁS AGRESIVA: aumenta exponencialmente con cada visita adicional
+        // La penalización es extremadamente alta cuando pocas vías han sido visitadas
+        const baseVisitPenalty = Math.pow(visitCount + 1, 1.5) * 1.0; // Penalización exponencial por número de visitas
+        const dynamicPenalty = Math.max(1.0, 5.0 * (1 - visitedRatio));
+        visitedPenalty = baseVisitPenalty * dynamicPenalty;
+        
+        // Penalización mucho mayor en modo exploración completa
+        if (exploreAllMode) {
+          visitedPenalty *= 3;
+        }
+        
+        // Penalización adicional si estamos forzando exploración aleatoria
+        if (forceRandomExploration) {
+          visitedPenalty *= 5; // Penalización extrema para forzar nuevas áreas
+        }
+        
+        // Penalizar vías que aparecen en las últimas visitadas recientemente
+        if (lastVisitedTracks.slice(-8).includes(track.id)) {
+          visitedPenalty *= 2; // Doble penalización para vías visitadas recientemente
+        }
+      }
+      
+      // Añadir un factor aleatorio MUCHO MÁS FUERTE para mejorar la exploración
+      // Este factor es extremadamente significativo para garantizar exploración completa
+      let randomFactor;
+      
+      if (forceRandomExploration) {
+        // Factor aleatorio extremadamente alto cuando estamos forzando exploración
+        randomFactor = Math.random() * 10.0; // 20 veces más fuerte que el original
+      } else if (exploreAllMode) {
+        // Factor aleatorio muy alto en modo exploración
+        randomFactor = Math.random() * 3.0; // 6 veces más fuerte que el original
+      } else {
+        // Factor aleatorio moderado en modo normal
+        randomFactor = Math.random() * 1.0; // 5 veces más fuerte que el original
+      }
+      
+      const score = distanceScore - visitedPenalty + randomFactor;
+      
+      if (score > bestScore) {
+        bestScore = score;
+        bestTrack = track;
+      }
     });
     
-    return closestTrack;
-  }, [tracks, trainPosition]);
+    return bestTrack;
+  }, [tracks, trainPosition, visitedTracks, exploreAllMode]);
   
   // Función para encontrar una ruta entre vías conectadas
   const findPathBetweenTracks = useCallback((startTrack: TrackSegment, targetTrack: TrackSegment): TrackSegment[] | null => {
@@ -1346,21 +1576,255 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
   const [autoModePathIndex, setAutoModePathIndex] = useState<number>(0);
   const [autoModeTargetStation, setAutoModeTargetStation] = useState<Station | null>(null);
   
+  // Estado para rastrear las últimas vías visitadas
+  const [lastVisitedTracks, setLastVisitedTracks] = useState<string[]>([]);
+  // Estado para detectar bucles entre vías
+  const [loopDetectionCounter, setLoopDetectionCounter] = useState<Record<string, number>>({});
+  
+  // Estado para forzar exploración aleatoria periódicamente
+  const [forceRandomExploration, setForceRandomExploration] = useState<boolean>(false);
+  
+  // Contador para forzar exploración aleatoria cada cierto número de movimientos
+  const [movementCounter, setMovementCounter] = useState<number>(0);
+  
+  // Estado para almacenar la ruta actual en modo automático
+  // Función para actualizar el registro de vías visitadas
+  const updateVisitedTracksHistory = useCallback(() => {
+    if (!selectedTrack) return;
+    
+    // Incrementar contador de movimientos
+    setMovementCounter(prev => prev + 1);
+    
+    // Forzar exploración aleatoria cada 15-20 movimientos
+    if (movementCounter >= 15 + Math.floor(Math.random() * 5)) {
+      setForceRandomExploration(true);
+      setMovementCounter(0);
+      console.log("Activando exploración aleatoria forzada para descubrir nuevas áreas");
+      toast.info("Buscando nuevas áreas para explorar...");
+    }
+    
+    // Añadir la vía actual a la lista de últimas vías visitadas
+    const updatedLastTracks = [...lastVisitedTracks, selectedTrack.id].slice(-15); // Mantener las últimas 15 vías
+    setLastVisitedTracks(updatedLastTracks);
+    
+    // Marcar la vía como visitada para el modo de exploración completa
+    setVisitedTracks(prev => {
+      const newSet = new Set(prev);
+      newSet.add(selectedTrack.id);
+      return newSet;
+    });
+    
+    // Actualizar el contador de visitas para esta vía
+    setVisitCountMap(prev => {
+      const updated = new Map(prev);
+      const currentCount = updated.get(selectedTrack.id) || 0;
+      updated.set(selectedTrack.id, currentCount + 1);
+      return updated;
+    });
+    
+    // Verificar si todas las vías han sido visitadas
+    if (exploreAllMode && tracks.length > 0) {
+      const allVisited = tracks.every(track => visitedTracks instanceof Set && visitedTracks.has(track.id));
+      if (allVisited && !explorationCompleted) {
+        setExplorationCompleted(true);
+        toast.success('¡Exploración completa! Has recorrido todas las vías del mapa. 🎉');
+      }
+    }
+    
+    // DETECCIÓN DE BUCLES MEJORADA
+    // 1. Detectar bucles entre dos vías (A-B-A-B)
+    if (updatedLastTracks.length >= 4) {
+      // Verificar si hay un patrón A-B-A-B (bucle entre dos vías)
+      const last4Tracks = updatedLastTracks.slice(-4);
+      if (
+        last4Tracks[0] === last4Tracks[2] && 
+        last4Tracks[1] === last4Tracks[3] && 
+        last4Tracks[0] !== last4Tracks[1]
+      ) {
+        // Detectamos un bucle entre dos vías
+        const trackA = last4Tracks[0];
+        const trackB = last4Tracks[1];
+        const loopKey = `${trackA}-${trackB}`;
+        
+        // Incrementar el contador de este bucle específico
+        setLoopDetectionCounter(prev => {
+          const newCounter = {...prev};
+          newCounter[loopKey] = (newCounter[loopKey] || 0) + 1;
+          return newCounter;
+        });
+        
+        console.log(`Bucle A-B-A-B detectado entre vías ${trackA} y ${trackB}. Contador: ${(loopDetectionCounter[loopKey] || 0) + 1}`);
+        
+        // Activar exploración aleatoria forzada si detectamos un bucle
+        if ((loopDetectionCounter[loopKey] || 0) >= 1) {
+          setForceRandomExploration(true);
+          setMovementCounter(0);
+        }
+      }
+    }
+    
+    // Detectar patrones más complejos (repetición de secuencias)
+    if (updatedLastTracks.length >= 6) {
+      // Buscar patrones como A-B-C-A-B-C
+      const last6Tracks = updatedLastTracks.slice(-6);
+      if (
+        last6Tracks[0] === last6Tracks[3] && 
+        last6Tracks[1] === last6Tracks[4] && 
+        last6Tracks[2] === last6Tracks[5] &&
+        // Asegurarse de que no sean todas la misma vía
+        new Set(last6Tracks.slice(0, 3)).size > 1
+      ) {
+        const pattern = last6Tracks.slice(0, 3).join('-');
+        const loopKey = `pattern-${pattern}`;
+        
+        // Incrementar el contador de este patrón
+        setLoopDetectionCounter(prev => {
+          const newCounter = {...prev};
+          newCounter[loopKey] = (newCounter[loopKey] || 0) + 1;
+          return newCounter;
+        });
+        
+        console.log(`Bucle de patrón ${pattern} detectado. Contador: ${(loopDetectionCounter[loopKey] || 0) + 1}`);
+        setForceRandomExploration(true);
+      }
+    }
+    
+    // Detectar área de alta concentración (muchas visitas a las mismas vías)
+    const recentTracks = new Set(updatedLastTracks.slice(-8));
+    if (recentTracks.size <= 3 && updatedLastTracks.length >= 8) {
+      // Estamos visitando solo 3 o menos vías diferentes en los últimos 8 movimientos
+      const areaKey = `area-${Array.from(recentTracks).sort().join('-')}`;
+      
+      setLoopDetectionCounter(prev => {
+        const newCounter = {...prev};
+        newCounter[areaKey] = (newCounter[areaKey] || 0) + 1;
+        return newCounter;
+      });
+      
+      console.log(`Alta concentración en área ${areaKey}. Contador: ${(loopDetectionCounter[areaKey] || 0) + 1}`);
+      
+      // Si estamos atrapados en un área pequeña por mucho tiempo, forzar exploración aleatoria
+      if ((loopDetectionCounter[areaKey] || 0) >= 1) {
+        setForceRandomExploration(true);
+        setMovementCounter(0);
+      }
+    }
+    
+    // TOMAR ACCIÓN CONTRA BUCLES PERSISTENTES
+    Object.entries(loopDetectionCounter).forEach(([loopKey, count]) => {
+      // Si un bucle se ha detectado más de 2 veces, tomar medidas drásticas
+      if (count >= 2) {
+        console.log(`Bucle persistente detectado: ${loopKey}. Contador: ${count}. Tomando medidas drásticas.`);
+        toast.error(`Bucle detectado. Buscando una ruta completamente nueva.`);
+        
+        // Extraer las vías involucradas en el bucle
+        let loopTracks: string[] = [];
+        
+        if (loopKey.includes('pattern-')) {
+          loopTracks = loopKey.split('-').slice(1);
+        } else if (loopKey.includes('area-')) {
+          loopTracks = loopKey.split('-').slice(1);
+        } else {
+          loopTracks = loopKey.split('-');
+        }
+        
+        // Buscar vías que no estén en el bucle
+        const tracksNotInLoop = tracks.filter(t => !loopTracks.includes(t.id));
+        
+        if (tracksNotInLoop.length > 0) {
+          // Seleccionar una vía aleatoria que no esté en el bucle, priorizando las menos visitadas
+          const sortedTracks = [...tracksNotInLoop].sort((a, b) => {
+            const visitsA = visitCountMap.get(a.id) || 0;
+            const visitsB = visitCountMap.get(b.id) || 0;
+            return visitsA - visitsB; // Ordenar por número de visitas (menos a más)
+          });
+          
+          // Tomar una de las vías menos visitadas al azar
+          const candidateTracks = sortedTracks.slice(0, Math.min(5, sortedTracks.length));
+          const randomTrack = candidateTracks[Math.floor(Math.random() * candidateTracks.length)];
+          
+          // Intentar encontrar un camino hacia esta vía
+          const escapePath = findPathBetweenTracks(selectedTrack, randomTrack);
+          
+          if (escapePath && escapePath.length > 0) {
+            // Establecer esta ruta como la nueva ruta para escapar del bucle
+            setAutoModePath(escapePath);
+            setAutoModePathIndex(0);
+            toast.success(`Rompiendo bucle: nueva ruta hacia vía ${randomTrack.id} encontrada.`);
+            
+            // Resetear el contador de bucles para estas vías
+            setLoopDetectionCounter(prev => {
+              const newCounter = {...prev};
+              delete newCounter[loopKey];
+              return newCounter;
+            });
+            
+            // Desactivar la exploración forzada ya que estamos tomando una acción específica
+            setForceRandomExploration(false);
+            
+            return; // Salir para evitar otras acciones
+          }
+        }
+        
+        // Si no se puede encontrar una ruta de escape y el bucle persiste
+        if (count >= 4) {
+          toast.error(`No se puede escapar del bucle. Desactivando modo automático.`);
+          setAutoMode(false);
+          
+          // Resetear todos los contadores de bucles
+          setLoopDetectionCounter({});
+          setForceRandomExploration(false);
+          return;
+        }
+      }
+    });
+    
+    // Contar cuántas veces aparece la vía actual en las últimas visitadas
+    const currentTrackOccurrences = updatedLastTracks.filter(id => id === selectedTrack.id).length;
+    
+    // Si la vía actual aparece más de 3 veces en las últimas 10, aumentar su penalización
+    if (currentTrackOccurrences >= 3) {
+      console.log(`Vía ${selectedTrack.id} detectada en un posible bucle, aumentando penalización`);
+      
+      // Notificar al usuario
+      toast.warning(`Detectado posible bucle en vía ${selectedTrack.id}. Buscando rutas alternativas.`);
+    }
+  }, [selectedTrack, lastVisitedTracks, exploreAllMode, tracks, visitedTracks, explorationCompleted, loopDetectionCounter, findPathBetweenTracks, setAutoMode, movementCounter, visitCountMap, forceRandomExploration, setForceRandomExploration, setMovementCounter, setVisitedTracks, setVisitCountMap, setExplorationCompleted, autoModePath, setAutoModePath, setAutoModePathIndex, setLoopDetectionCounter, setLastVisitedTracks]);
+  
+
+  
   // Efecto para el modo automático inteligente
   useEffect(() => {
     if (!autoMode) return;
     
+    // Asegurarse de que el tren esté en movimiento cuando se activa el modo automático
+    setTrainMoving(true);
+    
     // Calcular el intervalo de tiempo basado en la velocidad
-    // Velocidad 1% = 2000ms (muy lento), Velocidad 100% = 100ms (muy rápido)
-    const interval = Math.max(100, 2000 - (trainSpeed * 19));
+    // Velocidad 1% = 3000ms (extremadamente lento), Velocidad 100% = 500ms (moderado)
+    // Fórmula ajustada para que el tren vaya más lento en modo automático
+    const interval = Math.max(500, 3000 - (trainSpeed * 25));
+    
+    console.log("Modo automático con velocidad:", trainSpeed, "% - Intervalo:", interval, "ms");
+    
+    // Resetear el historial de vías visitadas al iniciar el modo automático
+    setLastVisitedTracks([]);
+    
+    // Mover el tren inmediatamente al activar el modo automático
+    if (selectedTrack) {
+      handleMoveTrainClick();
+    }
     
     // Crear un temporizador para mover el tren automáticamente
-    const intervalId = setInterval(() => {
+    const intervalId = window.setInterval(() => {
       if (!selectedTrack || selectedTrack.path.length === 0) {
         setAutoMode(false);
         toast.error("No hay vía seleccionada");
         return;
       }
+      
+      // Actualizar el historial de vías visitadas y detectar posibles bucles
+      updateVisitedTracksHistory();
       
       // Si tenemos una ruta en progreso, seguirla
       if (autoModePath.length > 0 && autoModePathIndex < autoModePath.length) {
@@ -1431,13 +1895,21 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
         // Verificar si hay pasajeros en el tren que necesitan ser entregados
         if (pickedUpPassengers.length > 0) {
           // Priorizar la entrega de pasajeros ya recogidos
-          const firstPassenger = pickedUpPassengers[0];
+          // Ordenar pasajeros por orden de recogida (entregar primero los que fueron recogidos primero)
+          // Como no tenemos un timestamp de recogida, usamos el orden actual de la lista
+          const sortedPassengers = [...pickedUpPassengers];
+          const firstPassenger = sortedPassengers[0];
           const destinationStation = firstPassenger.destination;
           
           // Buscar la mejor vía para llegar a la estación de destino
           const bestTrackToDestination = findBestTrackToStation(destinationStation);
           
           if (bestTrackToDestination && bestTrackToDestination.id !== selectedTrack.id) {
+            // Registrar la vía actual como visitada para evitar bucles
+            if (selectedTrack) {
+              markTrackAsVisited(selectedTrack.id);
+            }
+            
             // Buscar una ruta desde la vía actual hasta la vía objetivo
             const path = findPathBetweenTracks(selectedTrack, bestTrackToDestination);
             
@@ -1466,6 +1938,11 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
             const bestTrackToStation = findBestTrackToStation(bestStation);
             
             if (bestTrackToStation && bestTrackToStation.id !== selectedTrack.id) {
+              // Registrar la vía actual como visitada para evitar bucles
+              if (selectedTrack) {
+                markTrackAsVisited(selectedTrack.id);
+              }
+              
               // Buscar una ruta desde la vía actual hasta la vía objetivo
               const path = findPathBetweenTracks(selectedTrack, bestTrackToStation);
               
@@ -1486,8 +1963,246 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
               }
             }
           } else {
-            // No hay estaciones con pasajeros, simplemente mover el tren
-            handleMoveTrainClick();
+            // No hay estaciones con pasajeros, explorar nuevas vías no visitadas
+            // Implementar un algoritmo más sofisticado para la exploración completa del mapa
+            
+            // Calcular el porcentaje de vías visitadas
+            const visitedCount = visitedTracks.size;
+            const totalTracks = tracks.length;
+            const visitedRatio = visitedCount / totalTracks;
+            
+            // Mostrar progreso de exploración
+            const explorationProgress = Math.floor(visitedRatio * 100);
+            
+            // Estrategia 1: Priorizar vías no visitadas
+            const unvisitedTracks = tracks.filter(track => !visitedTracks.has(track.id));
+            
+            if (unvisitedTracks.length > 0) {
+              // Calcular la distancia desde la posición actual a cada vía no visitada
+              const tracksWithDistance = unvisitedTracks.map(track => {
+                // Encontrar el punto más cercano de la vía
+                let minDistance = Infinity;
+                track.path.forEach(point => {
+                  const distance = calculateHaversineDistance(
+                    trainPosition.lat,
+                    trainPosition.lng,
+                    point.lat,
+                    point.lng
+                  );
+                  if (distance < minDistance) {
+                    minDistance = distance;
+                  }
+                });
+                
+                return {
+                  track,
+                  distance: minDistance,
+                  // Añadir un factor aleatorio extremadamente alto para garantizar exploración aleatoria
+                  randomFactor: Math.random() * 5.0 // Factor aleatorio 5 veces más fuerte
+                };
+              });
+              
+              // Ordenar vías por una combinación de distancia y factor aleatorio
+              // Esto garantiza que el tren no siempre elija la vía más cercana
+              tracksWithDistance.sort((a, b) => {
+                // Combinar distancia y factor aleatorio
+                // Aumentamos EXTREMADAMENTE el peso del factor aleatorio para garantizar
+                // que el tren explore todo el mapa de forma completamente aleatoria
+                // Esto es crucial para evitar bucles y garantizar exploración completa
+                const randomWeight = 10.0; // Peso fijo extremadamente alto para el factor aleatorio
+                const scoreA = a.distance - (a.randomFactor * randomWeight * 50000); // Influencia masiva del factor aleatorio
+                const scoreB = b.distance - (b.randomFactor * randomWeight * 50000);
+                return scoreA - scoreB;
+              });
+              
+              // Elegir una vía de forma EXTREMADAMENTE aleatoria para garantizar exploración completa
+              // Aumentamos drásticamente el rango de selección para máxima aleatoriedad
+              // Esto es crucial para evitar bucles y garantizar exploración completa
+              const selectionIndex = Math.min(
+                Math.floor(Math.random() * Math.min(20, tracksWithDistance.length)), // Elegir entre hasta 20 opciones
+                tracksWithDistance.length - 1
+              );
+              
+              // Usar let en lugar de const para poder reasignar
+              let selectedTrackToExplore = tracksWithDistance[selectionIndex].track;
+              
+              // Verificar si esta vía aparece en las últimas visitadas (para evitar bucles)
+              const recentlyVisited = lastVisitedTracks.includes(selectedTrackToExplore.id);
+              
+              // Si la vía seleccionada ha sido visitada recientemente, intentar con otra
+              if (recentlyVisited && tracksWithDistance.length > 1) {
+                // Elegir otra vía aleatoria que no sea la que acabamos de seleccionar
+                const alternativeOptions = tracksWithDistance.filter(t => t.track.id !== selectedTrackToExplore.id);
+                if (alternativeOptions.length > 0) {
+                  const alternativeIndex = Math.floor(Math.random() * alternativeOptions.length);
+                  const alternativeTrack = alternativeOptions[alternativeIndex].track;
+                  console.log(`Vía ${selectedTrackToExplore.id} visitada recientemente, cambiando a ${alternativeTrack.id}`);
+                  selectedTrackToExplore = alternativeTrack;
+                }
+              }
+              
+              // Verificar si hay un camino conectado desde la vía actual hasta la vía seleccionada
+              // Esto es crucial para evitar que el tren intente ir a vías no conectadas
+              const pathToSelectedTrack = findPathBetweenTracks(selectedTrack, selectedTrackToExplore);
+              
+              // Si no hay un camino conectado, buscar otra vía que sí esté conectada
+              if (!pathToSelectedTrack && tracksWithDistance.length > 1) {
+                console.log(`No hay camino conectado a vía ${selectedTrackToExplore.id}, buscando alternativa...`);
+                
+                // Buscar una vía alternativa que tenga un camino conectado
+                for (let i = 0; i < tracksWithDistance.length; i++) {
+                  const alternativeTrack = tracksWithDistance[i].track;
+                  if (alternativeTrack.id !== selectedTrackToExplore.id) {
+                    const alternativePath = findPathBetweenTracks(selectedTrack, alternativeTrack);
+                    if (alternativePath) {
+                      console.log(`Encontrada vía conectada alternativa: ${alternativeTrack.id}`);
+                      selectedTrackToExplore = alternativeTrack;
+                      break;
+                    }
+                  }
+                }
+              }
+              
+              // Usar la vía seleccionada (original o alternativa)
+              const trackToExplore = selectedTrackToExplore;
+              
+              // Mostrar información de depuración sobre la exploración
+              console.log("Exploración automática:", {
+                totalTracks: tracks.length,
+                unvisitedTracks: unvisitedTracks.length,
+                selectedTrackId: trackToExplore.id,
+                selectionIndex,
+                randomFactor: tracksWithDistance[selectionIndex].randomFactor,
+                distance: tracksWithDistance[selectionIndex].distance
+              });
+              
+              // Buscar una ruta a esta vía
+              const path = findPathBetweenTracks(selectedTrack, trackToExplore);
+              
+              if (path && path.length > 0) {
+                // Registrar todas las vías de la ruta como visitadas
+                path.forEach(track => markTrackAsVisited(track.id));
+                
+                setAutoModePath(path);
+                setAutoModePathIndex(0);
+                toast.info(`Explorando: ${explorationProgress}% del mapa (${visitedCount}/${totalTracks} vías)`);
+              } else {
+                // Si no se puede encontrar una ruta, mover el tren a lo largo de la vía actual
+                // y marcarla como visitada
+                if (selectedTrack) {
+                  markTrackAsVisited(selectedTrack.id);
+                }
+                handleMoveTrainClick();
+              }
+            } else {
+              // Todas las vías han sido visitadas al menos una vez
+              if (!explorationCompleted && exploreAllMode) {
+                toast.success("¡Exploración completa! Has recorrido todas las vías del mapa.");
+                setExplorationCompleted(true);
+              }
+              
+              // En lugar de reiniciar completamente, buscar las vías menos visitadas
+              const trackVisitCounts = Array.from(tracks).map(track => ({
+                track,
+                visitCount: visitCountMap.get(track.id) || 0
+              }));
+              
+              // Ordenar las vías por número de visitas (menos visitas primero)
+              trackVisitCounts.sort((a, b) => a.visitCount - b.visitCount);
+              
+              // Obtener el número mínimo de visitas
+              const minVisitCount = trackVisitCounts.length > 0 ? trackVisitCounts[0].visitCount : 0;
+              
+              // Calcular el rango de visitas para considerar vías "menos visitadas"
+              // Esto permite incluir más vías en la selección para mayor aleatoriedad
+              const visitThreshold = minVisitCount + 1; // Incluir vías con 1 visita más que el mínimo
+              
+              // Filtrar vías con pocas visitas (no solo las mínimas)
+              const leastVisitedTracks = trackVisitCounts
+                .filter(item => item.visitCount <= visitThreshold)
+                .map(item => item.track);
+              
+              console.log("Exploración de vías menos visitadas:", {
+                totalTracks: tracks.length,
+                minVisitCount,
+                visitThreshold,
+                candidateTracks: leastVisitedTracks.length
+              });
+              
+              if (leastVisitedTracks.length > 0) {
+                // Calcular distancias a cada vía menos visitada
+                const tracksWithDistance = leastVisitedTracks.map(track => {
+                  // Encontrar el punto más cercano de la vía
+                  let minDistance = Infinity;
+                  track.path.forEach(point => {
+                    const distance = calculateHaversineDistance(
+                      trainPosition.lat,
+                      trainPosition.lng,
+                      point.lat,
+                      point.lng
+                    );
+                    if (distance < minDistance) {
+                      minDistance = distance;
+                    }
+                  });
+                  
+                  return {
+                    track,
+                    distance: minDistance,
+                    // Factor aleatorio muy alto para garantizar exploración aleatoria
+                    randomFactor: Math.random() * 2.0 // Factor aleatorio doble para máxima aleatoriedad
+                  };
+                });
+                
+                // Ordenar con un componente aleatorio muy fuerte
+                tracksWithDistance.sort((a, b) => {
+                  // El factor aleatorio tiene mucho más peso que la distancia
+                  const scoreA = a.distance - (a.randomFactor * 30000);
+                  const scoreB = b.distance - (b.randomFactor * 30000);
+                  return scoreA - scoreB;
+                });
+                
+                // Elegir una vía de forma muy aleatoria
+                const selectionIndex = Math.min(
+                  Math.floor(Math.random() * Math.min(15, tracksWithDistance.length)), // Hasta 15 opciones
+                  tracksWithDistance.length - 1
+                );
+                const trackToExplore = tracksWithDistance[selectionIndex].track;
+                
+                console.log(`Seleccionada vía ${trackToExplore.id} para exploración (${minVisitCount} visitas)`, {
+                  selectionIndex,
+                  randomFactor: tracksWithDistance[selectionIndex].randomFactor,
+                  distance: tracksWithDistance[selectionIndex].distance
+                });
+                
+                toast.info(`Explorando vías menos visitadas (${minVisitCount} visitas)`);
+                
+                // Buscar una ruta a esta vía
+                const newPath = findPathBetweenTracks(selectedTrack, trackToExplore);
+                
+                if (newPath && newPath.length > 0) {
+                  setAutoModePath(newPath);
+                  setAutoModePathIndex(0);
+                } else {
+                  // En lugar de seleccionar una vía aleatoria que podría no estar conectada,
+                  // simplemente cambiamos de dirección en la vía actual
+                  console.log("No se encontró ruta conectada, cambiando de dirección en la vía actual");
+                  
+                  // No hay necesidad de buscar una ruta alternativa que podría causar teleportación
+                  const alternativePath = null;
+                  
+                  if (alternativePath && alternativePath.length > 0) {
+                    setAutoModePath(alternativePath);
+                    setAutoModePathIndex(0);
+                  } else {
+                    handleMoveTrainClick();
+                  }
+                }
+              } else {
+                // Si por alguna razón no hay vías, simplemente mover el tren
+                handleMoveTrainClick();
+              }
+            }
           }
         }
       }
@@ -1498,8 +2213,13 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
       }
     }, interval);
     
+    // Guardar la referencia al intervalo
+    autoModeIntervalRef.current = intervalId as unknown as number;
+    
     return () => {
+      console.log("Limpiando intervalo del modo automático");
       clearInterval(intervalId);
+      autoModeIntervalRef.current = null;
       // Limpiar la ruta al desactivar el modo automático
       setAutoModePath([]);
       setAutoModePathIndex(0);
@@ -1513,24 +2233,190 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
   // Manejar la selección de una vía
   const handleTrackSelect = useCallback((trackId: string) => {
     const track = tracks.find(t => t.id === trackId);
-    if (track) {
-      // Siempre resaltar la vía seleccionada para visualización
-      setHighlightedTrack(track);
+    if (!track) return;
+    
+    // Siempre resaltar la vía seleccionada para visualización
+    setHighlightedTrack(track);
+    
+    // Si no hay una vía seleccionada actualmente, colocar el tren en la vía seleccionada
+    if (!selectedTrack) {
+      setSelectedTrack(track);
+      setCurrentPathIndex(0);
+      setTrainPosition(track.path[0]);
+      setCurrentTrackId(track.id);
+      setIsReversed(false); // Reiniciar dirección al seleccionar una nueva vía
+      toast.success(`Tren colocado en vía: ${track.id}`);
+      return;
+    }
+    
+    // Si ya hay una vía seleccionada, buscar un camino hacia la nueva vía
+    if (selectedTrack.id !== track.id) {
+      // Verificar si la vía seleccionada está directamente conectada a la vía actual
+      // Esto es importante para el cambio de vía con teclas A/D
+      const isDirectlyConnected = findPathBetweenTracks(selectedTrack, track)?.length === 2;
       
-      // Solo cambiar la ruta del tren si no está en movimiento (ni automático ni manual)
-      if (!autoMode && !selectedTrack) {
-        setSelectedTrack(track);
-        setCurrentPathIndex(0);
-        setTrainPosition(track.path[0]);
-        setCurrentTrackId(track.id);
-        setIsReversed(false); // Reiniciar dirección al seleccionar una nueva vía
-        toast.success(`Tren colocado en vía: ${track.id}`);
+      // Buscar un camino desde la vía actual hasta la vía seleccionada
+      const path = findPathBetweenTracks(selectedTrack, track);
+      
+      if (path && path.length > 0) {
+        // Si es una vía directamente conectada (cambio con A/D o teclas numéricas)
+        // y el tren está cerca del punto de conexión, hacer un cambio suave sin teleportación
+        if (isDirectlyConnected) {
+          // Determinar si el tren está cerca del punto de conexión
+          // Buscar el punto más cercano entre las dos vías
+          let minDistance = Number.MAX_VALUE;
+          let closestPointIndex = 0;
+          
+          // Encontrar el punto de la vía actual más cercano al tren
+          for (let i = 0; i < selectedTrack.path.length; i++) {
+            const distance = calculateDistance(trainPosition, selectedTrack.path[i]);
+            if (distance < minDistance) {
+              minDistance = distance;
+              closestPointIndex = i;
+            }
+          }
+          
+          // Determinar si estamos cerca del inicio o del final de la vía
+          const isNearStart = closestPointIndex < selectedTrack.path.length * 0.3;
+          const isNearEnd = closestPointIndex > selectedTrack.path.length * 0.7;
+          
+          // Si estamos cerca del inicio o del final, podemos hacer un cambio suave
+          if (isNearStart || isNearEnd) {
+            // Cambiar directamente a la nueva vía sin teleportación
+            setSelectedTrack(track);
+            setCurrentTrackId(track.id);
+            
+            // Determinar la dirección inicial en la nueva vía
+            // Si estamos cerca del inicio de la vía actual, comenzar desde el final de la nueva vía
+            // Si estamos cerca del final de la vía actual, comenzar desde el inicio de la nueva vía
+            const newIsReversed = isNearStart;
+            setIsReversed(newIsReversed);
+            
+            // Establecer el índice de ruta adecuado
+            if (newIsReversed) {
+              setCurrentPathIndex(track.path.length - 1);
+            } else {
+              setCurrentPathIndex(0);
+            }
+            
+            // Marcar la vía como visitada
+            setVisitedTracks(prev => {
+              const newSet = new Set(prev);
+              newSet.add(track.id);
+              return newSet;
+            });
+            
+            toast.success(`Cambiando a vía ${track.id} (cambio suave)`);
+            return;
+          }
+        }
+        
+        // Si no es un cambio suave, usar el método estándar con ruta
+        setAutoModePath(path);
+        setAutoModePathIndex(0);
+        
+        // Verificar si hay pasajeros en la vía seleccionada
+        const stationsOnTrack = stations.filter(s => s.trackId === track.id);
+        const hasPassengers = stationsOnTrack.some(station => {
+          return activePassengers.some(p => !p.isPickedUp && p.origin.id === station.id);
+        });
+        
+        // Mensaje personalizado según si hay pasajeros o no
+        if (hasPassengers) {
+          toast.success(`Ruta calculada a vía ${track.id} con pasajeros esperando (${path.length} vías)`);
+        } else {
+          toast.success(`Ruta calculada a vía ${track.id} (${path.length} vías)`);
+        }
+        
+        // Si ya está en modo automático, simplemente cambiar la ruta
+        // Si no está en modo automático, activarlo temporalmente para seguir la ruta
+        if (!autoMode) {
+          setAutoMode(true);
+          
+          // Configurar un temporizador para desactivar el modo automático cuando se complete la ruta
+          setTimeout(() => {
+            // Comprobar si el tren ha llegado a la vía objetivo
+            if (selectedTrack && selectedTrack.id === track.id) {
+              setAutoMode(false);
+              toast.success(`Tren llegado a la vía ${track.id}`);
+            }
+          }, path.length * 2000); // Tiempo estimado para completar la ruta
+        } else {
+          // Si ya está en modo automático, informar que se ha cambiado la ruta
+          toast.info(`Cambiando rumbo en modo automático hacia vía ${track.id}`);
+          
+          // Limpiar cualquier objetivo anterior
+          setAutoModeTargetStation(null);
+        }
       } else {
-        // Solo mostrar un mensaje informativo
-        toast.info(`Visualizando vía: ${track.id}`);
+        toast.error(`No se encontró una ruta conectada a la vía ${track.id}`);
+      }
+    } else {
+      // Si es la misma vía, solo mostrar un mensaje
+      toast.info(`El tren ya está en la vía ${track.id}`);
+    }
+  }, [tracks, autoMode, selectedTrack, stations, activePassengers]);
+
+  // Manejador de eventos de teclado para cambiar de vía con A/D o flechas izquierda/derecha
+  const handleKeyDown = useCallback((event: KeyboardEvent) => {
+    // Si no hay una vía seleccionada o el tren está en modo automático, no hacer nada
+    if (!selectedTrack || autoMode) return;
+    
+    // Obtener todas las vías conectadas a la vía actual
+    const connectedTracks = tracks.filter(track => {
+      // Verificar si hay una conexión entre la vía actual y esta vía
+      const path = findPathBetweenTracks(selectedTrack, track);
+      return path && path.length === 2; // Solo considerar vías directamente conectadas (path incluye la vía actual)
+    });
+    
+    // Si no hay vías conectadas, no hacer nada
+    if (connectedTracks.length === 0) return;
+    
+    // Manejar las teclas A/D o flechas izquierda/derecha
+    if (event.key === 'a' || event.key === 'A' || event.key === 'ArrowLeft') {
+      // Seleccionar la vía conectada a la izquierda (si hay varias, elegir la primera)
+      if (connectedTracks.length > 0) {
+        const nextTrack = connectedTracks[0];
+        handleTrackSelect(nextTrack.id);
+        toast.info(`Cambiando a vía ${nextTrack.id} (izquierda)`);
+      }
+    } else if (event.key === 'd' || event.key === 'D' || event.key === 'ArrowRight') {
+      // Seleccionar la vía conectada a la derecha (si hay varias, elegir la última)
+      if (connectedTracks.length > 0) {
+        const nextTrack = connectedTracks[connectedTracks.length - 1];
+        handleTrackSelect(nextTrack.id);
+        toast.info(`Cambiando a vía ${nextTrack.id} (derecha)`);
+      }
+    } else if (event.key >= '1' && event.key <= '9') {
+      // Seleccionar una vía numerada del 1 al 9
+      const trackIndex = parseInt(event.key) - 1;
+      if (trackIndex < numberedTracks.length) {
+        const selectedNumberedTrack = numberedTracks[trackIndex];
+        handleTrackSelect(selectedNumberedTrack.id);
+        toast.info(`Cambiando a vía ${selectedNumberedTrack.id} (tecla ${event.key})`);
       }
     }
-  }, [tracks, autoMode, selectedTrack]);
+  }, [selectedTrack, autoMode, tracks, numberedTracks, handleTrackSelect, findPathBetweenTracks]);
+  
+  // Efecto para registrar y limpiar el manejador de eventos de teclado
+  useEffect(() => {
+    // Registrar el manejador de eventos de teclado
+    window.addEventListener('keydown', handleKeyDown);
+    
+    // Limpiar el manejador de eventos de teclado al desmontar el componente
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [handleKeyDown]);
+
+  // Efecto para actualizar las vías globales cuando cambian
+  useEffect(() => {
+    // Establecer las vías globales para que findPathBetweenTracks pueda usarlas
+    if (tracks.length > 0) {
+      setGlobalTracks(tracks);
+      console.log(`Actualizadas ${tracks.length} vías globales para pathfinding`);
+    }
+  }, [tracks]);
 
   // Efecto para manejar el inicio del juego
   useEffect(() => {
@@ -1843,7 +2729,7 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
                       </div>
                       {autoMode && (
                         <Button 
-                          onClick={toggleExploreAllMode}
+                          onClick={() => setExploreAllMode(!exploreAllMode)}
                           className={`${exploreAllMode ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-500 hover:bg-gray-600'} text-white w-full text-xs py-1 h-7 mt-1 rounded-md flex items-center justify-center`}
                           size="sm"
                         >

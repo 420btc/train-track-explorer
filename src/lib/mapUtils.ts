@@ -1231,6 +1231,7 @@ export interface ConnectingTrackInfo {
   trackId: string;      // ID de la vía conectada
   startIndex: number;   // Índice por donde empezar (0 o último)
   reversed: boolean;    // Si debemos recorrer la vía en sentido inverso
+  isAtStart: boolean;   // Si la conexión es al inicio de la vía conectada
 }
 
 export const findConnectingTrack = (
@@ -1267,7 +1268,8 @@ export const findConnectingTrack = (
       closestTrack = {
         trackId: track.id,
         startIndex: 0, // Empezar desde el principio
-        reversed: false // No invertir el recorrido
+        reversed: false, // No invertir el recorrido
+        isAtStart: true // La conexión es al inicio de la vía
       };
     }
     
@@ -1276,7 +1278,8 @@ export const findConnectingTrack = (
       closestTrack = {
         trackId: track.id,
         startIndex: track.path.length - 1, // Empezar desde el final
-        reversed: true // Invertir el recorrido
+        reversed: true, // Invertir el recorrido
+        isAtStart: false // La conexión es al final de la vía
       };
     }
   });

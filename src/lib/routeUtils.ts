@@ -1,4 +1,4 @@
-import { Coordinates } from './mapUtils';
+import { Coordinates, TrackSegment, findConnectingTrack } from './mapUtils';
 
 interface RouteHistoryItem {
   id: string;
@@ -59,4 +59,79 @@ export const getUserRoutes = (userId: string): RouteHistoryItem[] => {
 // Función para guardar una ruta para el usuario actual
 export const saveRouteForCurrentUser = (name: string, coordinates: Coordinates, userId: string): void => {
   saveRouteToHistory(name, coordinates, userId);
+};
+
+// Variable global para almacenar todas las vías del juego
+// Esto permite que findPathBetweenTracks tenga acceso a todas las vías sin necesidad de pasarlas como parámetro
+let globalTracks: TrackSegment[] = [];
+
+// Función para establecer las vías globales
+export const setGlobalTracks = (tracks: TrackSegment[]): void => {
+  globalTracks = tracks;
+};
+
+// Función para encontrar un camino entre dos vías
+// Utiliza un algoritmo de búsqueda en anchura (BFS) para encontrar el camino más corto
+export const findPathBetweenTracks = (
+  startTrack: TrackSegment,
+  endTrack: TrackSegment
+): TrackSegment[] | null => {
+  // Usar las vías globales si están disponibles, o solo las vías proporcionadas si no
+  const allTracks = globalTracks.length > 0 ? globalTracks : [startTrack, endTrack];
+  // Si las vías son las mismas, devolver un array con la vía
+  if (startTrack.id === endTrack.id) {
+    return [startTrack];
+  }
+  
+  // Conjunto para almacenar las vías visitadas
+  const visited = new Set<string>();
+  // Cola para el BFS
+  const queue: { track: TrackSegment; path: TrackSegment[] }[] = [
+    { track: startTrack, path: [startTrack] }
+  ];
+  
+  while (queue.length > 0) {
+    const { track, path } = queue.shift()!;
+    
+    // Si ya hemos visitado esta vía, continuar con la siguiente
+    if (visited.has(track.id)) continue;
+    
+    // Marcar como visitada
+    visited.add(track.id);
+    
+    // Buscar vías conectadas
+    const connectingAtEnd = findConnectingTrack(track, allTracks, true);
+    const connectingAtStart = findConnectingTrack(track, allTracks, false);
+    
+    // Comprobar conexiones al final de la vía
+    if (connectingAtEnd && connectingAtEnd.trackId) {
+      // Si la vía conectada es la vía objetivo, hemos encontrado un camino
+      if (connectingAtEnd.trackId === endTrack.id) {
+        return [...path, endTrack];
+      }
+      
+      // Añadir la vía conectada a la cola
+      const nextTrack = allTracks.find(t => t.id === connectingAtEnd.trackId);
+      if (nextTrack && !visited.has(nextTrack.id)) {
+        queue.push({ track: nextTrack, path: [...path, nextTrack] });
+      }
+    }
+    
+    // Comprobar conexiones al inicio de la vía
+    if (connectingAtStart && connectingAtStart.trackId) {
+      // Si la vía conectada es la vía objetivo, hemos encontrado un camino
+      if (connectingAtStart.trackId === endTrack.id) {
+        return [...path, endTrack];
+      }
+      
+      // Añadir la vía conectada a la cola
+      const nextTrack = allTracks.find(t => t.id === connectingAtStart.trackId);
+      if (nextTrack && !visited.has(nextTrack.id)) {
+        queue.push({ track: nextTrack, path: [...path, nextTrack] });
+      }
+    }
+  }
+  
+  // Si no se encontró un camino, devolver null
+  return null;
 };
