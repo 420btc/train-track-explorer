@@ -654,22 +654,19 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
             return;
           }
         } else {
-          // Si no hay más vías cercanas, cambiar de dirección y esperar 5 segundos
-          toast.info("Final de vía detectado. Cambiando dirección en 5 segundos...");
+          // Si no hay más vías cercanas, cambiar de dirección inmediatamente
+          toast.info("Final de vía detectado. Cambiando dirección automáticamente...");
           
-          // Programar el cambio de dirección después de 5 segundos
-          setTimeout(() => {
-            // Invertir la dirección del tren
-            setIsReversed(!isReversed);
-            
-            // Establecer el índice de inicio según la nueva dirección
-            const newIndex = isReversed ? selectedTrack.path.length - 1 : 0;
-            setCurrentPathIndex(newIndex);
-            setTrainPosition(selectedTrack.path[newIndex]);
-            
-            toast.success("Dirección cambiada. Continuando en sentido " + (isReversed ? "inverso" : "normal"));
-          }, 5000);
+          // Invertir la dirección del tren
+          const newDirection = !isReversed;
+          setIsReversed(newDirection);
           
+          // Establecer el índice de inicio según la nueva dirección
+          const newIndex = newDirection ? selectedTrack.path.length - 1 : 0;
+          setCurrentPathIndex(newIndex);
+          setTrainPosition(selectedTrack.path[newIndex]);
+          
+          toast.success("Dirección cambiada. Continuando en sentido " + (newDirection ? "inverso" : "normal"));
           return;
         }
       }
@@ -720,6 +717,87 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
       toast.info('Piloto automático desactivado');
     }
   }, [autoMode, selectedTrack, trainMoving, activePassengers, pickedUpPassengers]);
+  
+  // Efecto para manejar el movimiento automático del tren
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout | null = null;
+    
+    if (autoMode && selectedTrack) {
+      // Configurar un intervalo para mover el tren automáticamente
+      // La velocidad del intervalo depende de la velocidad del tren
+      const intervalSpeed = Math.max(50, 500 - trainSpeed * 4); // Entre 50ms y 500ms
+      
+      intervalId = setInterval(() => {
+        // Mover el tren automáticamente
+        if (selectedTrack && trainMoving) {
+          // Calcular el siguiente índice basado en la dirección actual
+          let nextIndex;
+          if (!isReversed) {
+            // Movimiento normal (hacia adelante)
+            nextIndex = currentPathIndex + 1;
+          } else {
+            // Movimiento inverso (hacia atrás)
+            nextIndex = currentPathIndex - 1;
+          }
+          
+          // Verificar si hemos llegado al final o al inicio de la vía
+          const isAtEnd = !isReversed && nextIndex >= selectedTrack.path.length;
+          const isAtStart = isReversed && nextIndex < 0;
+          
+          if (isAtEnd || isAtStart) {
+            // Buscar una vía conectada
+            const connectingInfo = findConnectingTrack(selectedTrack, tracks, isAtEnd);
+            
+            if (connectingInfo) {
+              // Encontramos una vía conectada
+              const nextTrack = tracks.find(t => t.id === connectingInfo.trackId);
+              if (nextTrack) {
+                // Actualizar la vía seleccionada
+                setSelectedTrack(nextTrack);
+                setCurrentTrackId(nextTrack.id);
+                setIsReversed(connectingInfo.reversed);
+                
+                // Establecer el índice inicial en la nueva vía
+                setCurrentPathIndex(connectingInfo.startIndex);
+                setTrainPosition(nextTrack.path[connectingInfo.startIndex]);
+                
+                toast.success(`Conectando con vía ${nextTrack.id}`);
+                return;
+              }
+            } else {
+              // Si no hay conexión, cambiar de dirección automáticamente
+              const newDirection = !isReversed;
+              setIsReversed(newDirection);
+              
+              // Establecer el índice de inicio según la nueva dirección
+              const newIndex = newDirection ? selectedTrack.path.length - 1 : 0;
+              setCurrentPathIndex(newIndex);
+              setTrainPosition(selectedTrack.path[newIndex]);
+              
+              toast.success("Dirección cambiada. Continuando en sentido " + (newDirection ? "inverso" : "normal"));
+              return;
+            }
+          } else {
+            // Movimiento normal dentro de la misma vía
+            setCurrentPathIndex(nextIndex);
+            setTrainPosition(selectedTrack.path[nextIndex]);
+          }
+        }
+      }, intervalSpeed);
+      
+      // Asegurarse de que el tren esté en movimiento
+      if (!trainMoving) {
+        setTrainMoving(true);
+      }
+    }
+    
+    // Limpiar el intervalo cuando se desmonta el componente o cambia el modo automático
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [autoMode, selectedTrack, trainSpeed, currentPathIndex, isReversed, trainMoving, tracks]);
   
   // Función para activar/desactivar el modo de exploración completa
   const toggleExploreAllMode = useCallback(() => {
@@ -1272,19 +1350,9 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
   useEffect(() => {
     if (!autoMode) return;
     
-    // Asegurarse de que el tren esté en movimiento cuando se activa el modo automático
-    setTrainMoving(true);
-    
     // Calcular el intervalo de tiempo basado en la velocidad
     // Velocidad 1% = 2000ms (muy lento), Velocidad 100% = 100ms (muy rápido)
     const interval = Math.max(100, 2000 - (trainSpeed * 19));
-    
-    console.log("Iniciando modo automático con intervalo:", interval, "ms");
-    
-    // Mover el tren inmediatamente al activar el modo automático
-    if (selectedTrack) {
-      handleMoveTrainClick();
-    }
     
     // Crear un temporizador para mover el tren automáticamente
     const intervalId = setInterval(() => {
@@ -1431,7 +1499,6 @@ const TrainGame: React.FC<TrainGameProps> = ({ initialCoordinates = DEFAULT_COOR
     }, interval);
     
     return () => {
-      console.log("Limpiando intervalo del modo automático");
       clearInterval(intervalId);
       // Limpiar la ruta al desactivar el modo automático
       setAutoModePath([]);
