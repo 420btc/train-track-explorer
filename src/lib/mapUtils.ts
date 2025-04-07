@@ -1,9 +1,10 @@
 
-import { NominatimJS } from "nominatim-client";
+// Import the default export from nominatim-client instead of named export
+import nominatimClient from "nominatim-client";
 import mapboxgl from "mapbox-gl";
 
 // Create a nominatim client instance for geocoding
-const nominatimClient = new NominatimJS({
+const nominatimInstance = nominatimClient({
   useragent: "train-game-app", // Application identifier
   referer: "train-game-app", // Referer header
 });
@@ -17,7 +18,7 @@ export async function searchLocation(query: string): Promise<any[]> {
       return [];
     }
 
-    const response = await nominatimClient.search({
+    const response = await nominatimInstance.search({
       q: query,
       countrycodes: "es", // Limit to Spain
       addressdetails: 1,
