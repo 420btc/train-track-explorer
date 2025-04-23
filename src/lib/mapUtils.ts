@@ -1,10 +1,11 @@
 
-// Import the correct module from nominatim-client
-import * as nominatimClient from "nominatim-client";
+// Import nominatim-client correctly
+import nominatimClient from "nominatim-client";
 import mapboxgl from "mapbox-gl";
 
 // Create a nominatim client instance for geocoding
-const nominatimInstance = new nominatimClient.NominatimJS({
+// The library exports a function that creates a client, not a class
+const nominatimInstance = nominatimClient({
   useragent: "train-game-app", // Application identifier
   referer: "train-game-app", // Referer header
 });
