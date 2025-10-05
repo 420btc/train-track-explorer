@@ -1,7 +1,15 @@
-
 // Import nominatim-client correctly
 import { createClient } from "nominatim-client";
 import mapboxgl from "mapbox-gl";
+
+// Extend SearchOptions to include all Nominatim API parameters
+interface ExtendedSearchOptions {
+  q: string;
+  addressdetails?: 1;
+  countrycodes?: string;
+  limit?: number;
+  format?: string;
+}
 
 // Create a nominatim client instance for geocoding
 // Use the createClient function exported by the library
@@ -25,7 +33,7 @@ export async function searchLocation(query: string): Promise<any[]> {
       addressdetails: 1,
       limit: 5,
       format: "json"
-    });
+    } as ExtendedSearchOptions);
 
     console.log("Search results:", response);
     return response || [];
