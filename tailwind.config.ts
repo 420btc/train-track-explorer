@@ -1,4 +1,7 @@
+<<<<<<< HEAD
 
+=======
+>>>>>>> 81a8006f4dac1984b32564888a49dfbab218c3e5
 import type { Config } from "tailwindcss";
 
 export default {
@@ -62,11 +65,15 @@ export default {
 					'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
 					border: 'hsl(var(--sidebar-border))',
 					ring: 'hsl(var(--sidebar-ring))'
+<<<<<<< HEAD
 				},
 				// Train game specific colors
 				track: '#3b82f6', // Blue for train tracks
 				train: '#ef4444', // Red for train
 				station: '#fbbf24', // Yellow for stations
+=======
+				}
+>>>>>>> 81a8006f4dac1984b32564888a49dfbab218c3e5
 			},
 			borderRadius: {
 				lg: 'var(--radius)',
@@ -89,17 +96,24 @@ export default {
 					to: {
 						height: '0'
 					}
+<<<<<<< HEAD
 				},
 				'train-move': {
 					'0%': { transform: 'translateX(0) scale(1)' },
 					'50%': { transform: 'translateX(5px) scale(1.05)' },
 					'100%': { transform: 'translateX(0) scale(1)' }
+=======
+>>>>>>> 81a8006f4dac1984b32564888a49dfbab218c3e5
 				}
 			},
 			animation: {
 				'accordion-down': 'accordion-down 0.2s ease-out',
+<<<<<<< HEAD
 				'accordion-up': 'accordion-up 0.2s ease-out',
 				'train-move': 'train-move 0.5s ease-in-out'
+=======
+				'accordion-up': 'accordion-up 0.2s ease-out'
+>>>>>>> 81a8006f4dac1984b32564888a49dfbab218c3e5
 			}
 		}
 	},

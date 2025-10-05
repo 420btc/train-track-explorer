@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Metro Español 🚂
 
 ![Versión](https://img.shields.io/badge/versión-0.3.0-blue)
@@ -139,6 +140,31 @@ Para cualquier pregunta o sugerencia, por favor abre un issue en este repositori
 ---
 
 ⭐️ ¡Gracias por usar Metro Español! ⭐️
+=======
+# Welcome to your Lovable project
+
+## Project info
+
+**URL**: https://lovable.dev/projects/76b322d5-b184-4eba-8834-6ff8236bd374
+
+## How can I edit this code?
+
+There are several ways of editing your application.
+
+**Use Lovable**
+
+Simply visit the [Lovable Project](https://lovable.dev/projects/76b322d5-b184-4eba-8834-6ff8236bd374) and start prompting.
+
+Changes made via Lovable will be committed automatically to this repo.
+
+**Use your preferred IDE**
+
+If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+
+The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+
+Follow these steps:
+>>>>>>> 81a8006f4dac1984b32564888a49dfbab218c3e5
 
 ```sh
 # Step 1: Clone the repository using the project's Git URL.

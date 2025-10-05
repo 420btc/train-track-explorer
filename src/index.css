@@ -1,6 +1,9 @@
+<<<<<<< HEAD
 
 @import 'leaflet/dist/leaflet.css';
 
+=======
+>>>>>>> 81a8006f4dac1984b32564888a49dfbab218c3e5
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -100,6 +103,7 @@
 
   body {
     @apply bg-background text-foreground;
+<<<<<<< HEAD
     margin: 0;
     padding: 0;
   }
@@ -110,3 +114,7 @@
   width: 100%;
   height: 100vh;
 }
+=======
+  }
+}
+>>>>>>> 81a8006f4dac1984b32564888a49dfbab218c3e5
