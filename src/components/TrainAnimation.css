@@ -1,0 +1,289 @@
+/* Estilos para la animación del tren */
+.train-container {
+  position: relative;
+  width: 300px;
+  height: 100px;
+  margin: 0 auto;
+  animation: train-move 8s infinite linear;
+}
+
+@keyframes train-move {
+  0% { transform: translateX(-50px); }
+  50% { transform: translateX(50px); }
+  100% { transform: translateX(-50px); }
+}
+
+.locomotive {
+  position: relative;
+  width: 100px;
+  height: 60px;
+  z-index: 10;
+}
+
+.locomotive-body {
+  position: absolute;
+  width: 100px;
+  height: 40px;
+  background-color: #4285F4;
+  border-radius: 10px;
+  bottom: 20px;
+}
+
+.locomotive-cabin {
+  position: absolute;
+  width: 50px;
+  height: 30px;
+  background-color: #4285F4;
+  border-radius: 10px 10px 0 0;
+  top: -30px;
+  left: 10px;
+}
+
+.locomotive-window {
+  position: absolute;
+  width: 20px;
+  height: 15px;
+  background-color: #E8F0FE;
+  border-radius: 5px;
+  top: 8px;
+  left: 15px;
+}
+
+.locomotive-face {
+  position: absolute;
+  width: 40px;
+  height: 25px;
+  top: 5px;
+  left: 5px;
+}
+
+.locomotive-eye {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background-color: white;
+  border-radius: 50%;
+  border: 2px solid black;
+}
+
+.locomotive-eye.left {
+  left: 8px;
+  top: 5px;
+}
+
+.locomotive-eye.right {
+  right: 8px;
+  top: 5px;
+}
+
+.locomotive-eye:after {
+  content: '';
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  background-color: black;
+  border-radius: 50%;
+  top: 2px;
+  left: 2px;
+}
+
+.locomotive-mouth {
+  position: absolute;
+  width: 16px;
+  height: 6px;
+  background-color: #DB4437;
+  border-radius: 0 0 8px 8px;
+  bottom: 3px;
+  left: 12px;
+}
+
+.locomotive-chimney {
+  position: absolute;
+  width: 12px;
+  height: 15px;
+  background-color: #4285F4;
+  border-radius: 4px 4px 0 0;
+  top: -45px;
+  left: 70px;
+}
+
+.locomotive-front {
+  position: absolute;
+  width: 20px;
+  height: 15px;
+  background-color: #DB4437;
+  border-radius: 5px;
+  bottom: 0;
+  right: -10px;
+}
+
+.locomotive-wheels {
+  position: absolute;
+  width: 100px;
+  height: 20px;
+  bottom: 0;
+}
+
+.wheel {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  background-color: #5F6368;
+  border-radius: 50%;
+  border: 2px solid #202124;
+  bottom: 0;
+}
+
+.locomotive .wheel.front {
+  left: 10px;
+}
+
+.locomotive .wheel.middle {
+  left: 40px;
+}
+
+.locomotive .wheel.back {
+  left: 70px;
+}
+
+.wagon {
+  position: absolute;
+  width: 70px;
+  height: 40px;
+}
+
+.green {
+  left: 110px;
+  bottom: 0;
+}
+
+.yellow {
+  left: 190px;
+  bottom: 0;
+}
+
+.wagon-body {
+  position: absolute;
+  width: 70px;
+  height: 30px;
+  border-radius: 5px;
+  bottom: 20px;
+}
+
+.green .wagon-body {
+  background-color: #34A853;
+}
+
+.yellow .wagon-body {
+  background-color: #FBBC04;
+}
+
+.wagon-window {
+  position: absolute;
+  width: 15px;
+  height: 12px;
+  background-color: #E8F0FE;
+  border-radius: 3px;
+  top: 8px;
+  left: 27px;
+}
+
+.wagon-wheels {
+  position: absolute;
+  width: 70px;
+  height: 16px;
+  bottom: 0;
+}
+
+.wagon .wheel:first-child {
+  left: 12px;
+}
+
+.wagon .wheel:last-child {
+  right: 12px;
+}
+
+/* Estilos para el menú principal */
+.main-menu {
+  position: relative;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  background: linear-gradient(135deg, #1a73e8 0%, #34a853 50%, #fbbc04 100%);
+}
+
+.track-background {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 100px;
+  background-color: #333;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.track-line {
+  width: 100%;
+  height: 10px;
+  background-color: #555;
+  display: flex;
+}
+
+.track-sleeper {
+  height: 100%;
+  width: 30px;
+  border-left: 2px solid #777;
+  border-right: 2px solid #777;
+}
+
+.menu-content {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.menu-title {
+  font-size: 3rem;
+  font-weight: bold;
+  color: white;
+  margin-bottom: 1rem;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.menu-subtitle {
+  font-size: 1.5rem;
+  color: white;
+  margin-bottom: 2rem;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.play-button {
+  background-color: #4285F4;
+  color: white;
+  font-size: 1.5rem;
+  padding: 1rem 3rem;
+  border-radius: 9999px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s, background-color 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: none;
+  cursor: pointer;
+  z-index: 10;
+}
+
+.play-button:hover {
+  background-color: #3367d6;
+  transform: scale(1.05);
+}
+
+.play-button:active {
+  transform: scale(0.98);
+}

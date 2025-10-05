@@ -1,0 +1,27 @@
+/* Estilos para efectos visuales de las vías */
+
+.track-glow-effect {
+  filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.8));
+  animation: trackPulse 1.5s ease-in-out;
+  z-index: 1000 !important; /* Asegurar que esté por encima de otras capas */
+}
+
+@keyframes trackPulse {
+  0% {
+    opacity: 0.2;
+    filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.5));
+  }
+  50% {
+    opacity: 0.8;
+    filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.9));
+  }
+  100% {
+    opacity: 0.2;
+    filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.5));
+  }
+}
+
+/* Clase para asegurar que la vía seleccionada esté siempre por encima */
+.selected-track {
+  z-index: 1000 !important;
+}

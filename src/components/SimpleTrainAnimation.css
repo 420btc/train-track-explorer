@@ -1,0 +1,113 @@
+@keyframes moveRight {
+  0% {
+    transform: translateX(-150px);
+  }
+  100% {
+    transform: translateX(100vw);
+  }
+}
+
+.simple-train-wrapper {
+  position: absolute;
+  bottom: 10px;
+  left: 0;
+  width: 100%;
+  overflow: hidden;
+  z-index: 30;
+  pointer-events: none;
+}
+
+.simple-train {
+  position: relative;
+  animation: moveRight 10s linear infinite;
+  width: auto;
+  display: inline-block;
+}
+
+.train-body {
+  width: 60px;
+  height: 25px;
+  background-color: #3D85C6;
+  border-radius: 5px 5px 0 0;
+  position: relative;
+}
+
+.train-cabin {
+  width: 15px;
+  height: 10px;
+  background-color: #333;
+  position: absolute;
+  top: -10px;
+  left: 10px;
+  border-radius: 3px 3px 0 0;
+}
+
+.train-window {
+  width: 10px;
+  height: 10px;
+  background-color: #CFE2F3;
+  border: 1px solid #2C5E91;
+  border-radius: 50%;
+  position: absolute;
+  top: 5px;
+  left: 40px;
+}
+
+.train-base {
+  width: 60px;
+  height: 5px;
+  background-color: #FF9900;
+}
+
+.train-wheels {
+  display: flex;
+  justify-content: space-around;
+}
+
+.wheel {
+  width: 10px;
+  height: 10px;
+  background-color: #333;
+  border-radius: 50%;
+  border: 1px solid #666;
+}
+
+.wagon {
+  width: 50px;
+  height: 20px;
+  background-color: #6AA84F;
+  border-radius: 3px 3px 0 0;
+  margin-left: 5px;
+  position: relative;
+}
+
+.wagon-window {
+  width: 8px;
+  height: 8px;
+  background-color: #D9EAD3;
+  border: 1px solid #274E13;
+  position: absolute;
+  top: 5px;
+}
+
+.wagon-window-1 {
+  left: 10px;
+}
+
+.wagon-window-2 {
+  right: 10px;
+}
+
+.wagon-base {
+  width: 50px;
+  height: 5px;
+  background-color: #FF9900;
+}
+
+.train-container {
+  display: flex;
+  align-items: flex-end;
+  position: relative;
+}
+
+
